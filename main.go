@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"bytes"
 	"encoding/json"
+	"os"
 )
 
 func main() {
+
 	issue := IssueRequest{
 		Title: "Test Issue",
 		Body:  "This is a test issue created via the GitHub API.",
@@ -43,7 +45,16 @@ func main() {
 	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
 	req.Header.Set("User-Agent", "gundo")
 
-	fmt.Println("Headers:", req.Header)
+	token := os.Getenv("GITHUB_TOKEN")
+	
+	if token == "" {
+		fmt.Println("Error: GITHUB_TOKEN environment variable is not set.")
+		return
+	}
+
+	// token from env var
+	req.Header.Set("Authorization", "Bearer "+token)
+
 }
 
 type IssueRequest struct {
