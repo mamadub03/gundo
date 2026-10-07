@@ -1,18 +1,18 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"os"
 )
 
 func main() {
 
 	issue := IssueRequest{
-		Title: "Test Issue",
-		Body:  "This is a test issue created via the GitHub API.",
+		Title: "C2 Test",
+		Body:  "This is an issue created by go >:)",
 	}
 
 	jsonData, err := json.Marshal(issue)
@@ -46,7 +46,7 @@ func main() {
 	req.Header.Set("User-Agent", "gundo")
 
 	token := os.Getenv("GITHUB_TOKEN")
-	
+
 	if token == "" {
 		fmt.Println("Error: GITHUB_TOKEN environment variable is not set.")
 		return
@@ -55,10 +55,19 @@ func main() {
 	// token from env var
 	req.Header.Set("Authorization", "Bearer "+token)
 
+	client := &http.Client{}
+	resp, err := client.Do(req)
+
+	if err != nil {
+		fmt.Println("Error sending request:", err)
+		return
+	}
+
+	fmt.Println("Status:", resp.Status)
 }
 
 type IssueRequest struct {
 	// using JSON tags to use lowercase keys when struct becomes json
-	Title       string `json:"title"`
-	Body        string `json:"body"`
+	Title string `json:"title"`
+	Body  string `json:"body"`
 }
