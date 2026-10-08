@@ -135,7 +135,15 @@ func main() {
 		return
 	}
 
+	retrievedIssue, err := getIssue(createdIssue.Number)
+
+	if err != nil {
+		fmt.Printf("Error getting issue: %v\n", err)
+		return
+	}
+
 	fmt.Printf("Issue created successfully! Number: %d, Title: %s, URL: %s\n", createdIssue.Number, createdIssue.Title, createdIssue.HTMLURL)
+	fmt.Printf("Retrieved issue! Number: %d, Title: %s, URL: %s\n", retrievedIssue.Number, retrievedIssue.Title, retrievedIssue.HTMLURL)
 
 }
 
