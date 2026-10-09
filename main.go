@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 )
 
 func createIssue(issue IssueRequest) (IssueResponse, error) {
@@ -179,6 +180,37 @@ func listComments(issueNumber int) ([]IssueComment, error) {
 
 }
 
+func pollComments(issueNumber int) {
+
+	// keeing track of the last seen comment
+	var lastSeenCommentID int64
+
+	for {
+
+		// grab list of comments on an issue number
+		comments, err := listComments(issueNumber)
+		if err != nil {
+			fmt.Printf("Error listing comments: %v\n", err)
+			return
+		}
+
+		// checks for new comments to update comments slice
+		// if the comment is greater than the las seen comment, new comment is detected
+		// sets that new comment as the last seen comment and prints it out
+		// this loop can get very slow so this can be an optimization point later.
+		for _, comment := range comments {
+			if comment.ID > lastSeenCommentID {
+				fmt.Printf("New comment detected! ID: %d, Body: %s\n", comment.ID, comment.Body)
+				lastSeenCommentID = comment.ID
+			} else {
+				fmt.Printf("No new comments detected. Last seen comment ID: %d\n", lastSeenCommentID)
+			}
+		}
+
+		time.Sleep(10 * time.Second) // Poll every 10 seconds
+	}
+}
+
 func main() {
 
 	issue := IssueRequest{
@@ -218,6 +250,7 @@ func main() {
 	fmt.Printf("Issue created successfully! Number: %d, Title: %s, URL: %s\n", createdIssue.Number, createdIssue.Title, createdIssue.HTMLURL)
 	fmt.Printf("Retrieved issue! Number: %d, Title: %s, URL: %s\n", retrievedIssue.Number, retrievedIssue.Title, retrievedIssue.HTMLURL)
 
+	pollComments(createdIssue.Number)
 }
 
 type IssueRequest struct {
@@ -234,7 +267,7 @@ type IssueResponse struct {
 }
 
 type IssueComment struct {
-	ID   int    `json:"id"`
+	ID   int64  `json:"id"`
 	Body string `json:"body"`
 }
 
