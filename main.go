@@ -185,10 +185,21 @@ func pollComments(issueNumber int) {
 	// keeing track of the last seen comment
 	var lastSeenCommentID int64
 
+	// grab list of comments on an issue number
+	comments, err := listComments(issueNumber)
+	if err != nil {
+		fmt.Printf("Error listing comments: %v\n", err)
+		return
+	}
+
+	// make sure there are comments to set the baseline
+	if len(comments) > 0 {
+		lastSeenCommentID = comments[len(comments)-1].ID // set the last seen comment to the last comment in the list
+	}
 	for {
 
-		// grab list of comments on an issue number
-		comments, err := listComments(issueNumber)
+		comments, err = listComments(issueNumber)
+
 		if err != nil {
 			fmt.Printf("Error listing comments: %v\n", err)
 			return
@@ -202,8 +213,6 @@ func pollComments(issueNumber int) {
 			if comment.ID > lastSeenCommentID {
 				fmt.Printf("New comment detected! ID: %d, Body: %s\n", comment.ID, comment.Body)
 				lastSeenCommentID = comment.ID
-			} else {
-				fmt.Printf("No new comments detected. Last seen comment ID: %d\n", lastSeenCommentID)
 			}
 		}
 
@@ -231,26 +240,10 @@ func main() {
 		return
 	}
 
-	comments, err := listComments(11)
-	if err != nil {
-		fmt.Printf("Error listing comments: %v\n", err)
-		return
-	}
-
-	if len(comments) == 0 {
-		fmt.Println("No comments found for this issue.")
-		return
-	} else {
-		for _, comment := range comments {
-			fmt.Printf("Comment ID: %d, Body: %s\n", comment.ID, comment.Body)
-		}
-	}
-
-	fmt.Printf("Comments for issue #%d:\n", comments[0].ID)
 	fmt.Printf("Issue created successfully! Number: %d, Title: %s, URL: %s\n", createdIssue.Number, createdIssue.Title, createdIssue.HTMLURL)
 	fmt.Printf("Retrieved issue! Number: %d, Title: %s, URL: %s\n", retrievedIssue.Number, retrievedIssue.Title, retrievedIssue.HTMLURL)
 
-	pollComments(createdIssue.Number)
+	pollComments(17)
 }
 
 type IssueRequest struct {
