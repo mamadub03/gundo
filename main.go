@@ -205,10 +205,10 @@ func pollComments(issueNumber int) {
 			return
 		}
 
-		// checks for new comments to update comments slice
-		// if the comment is greater than the las seen comment, new comment is detected
-		// sets that new comment as the last seen comment and prints it out
-		// this loop can get very slow so this can be an optimization point later.
+		// 1. checks for new comments to update comments slice
+		// 2. if the comment id is greater than the las seen comment, new comment is detected
+		// 3. sets that new comment as the last seen comment and prints it out
+		// IMPORTANT 4. this loop can get very slow so this can be an optimization point later.
 		for _, comment := range comments {
 			if comment.ID > lastSeenCommentID {
 				fmt.Printf("New comment detected! ID: %d, Body: %s\n", comment.ID, comment.Body)
@@ -262,6 +262,17 @@ type IssueResponse struct {
 type IssueComment struct {
 	ID   int64  `json:"id"`
 	Body string `json:"body"`
+}
+
+type GundoMessage struct {
+
+	// struct for the gundo message that will be sent to the github issue comment
+
+	TYPE      string `json:"type"`
+	TASKID    string `json:"task_id"`
+	ACTION    string `json:"action"`
+	OUTPUT    string `json:"output"`
+	TIMESTAMP string `json:"timestamp"`
 }
 
 type GitHubErrorResponse struct {
