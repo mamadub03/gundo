@@ -7,7 +7,13 @@ import (
 	"net/http"
 	"os"
 	"time"
+	"uuid"
 )
+
+func generateTaskID() string {
+	// generate a new UUID
+	return uuid.New().String()
+}
 
 func createIssue(issue IssueRequest) (IssueResponse, error) {
 
@@ -220,6 +226,79 @@ func pollComments(issueNumber int) {
 	}
 }
 
+func createTaskMessage(action string) GundoMessage {
+
+	// create a new GundoMessage struct with the provided action and a generated task ID
+	message := GundoMessage{
+		Type:      "task",
+		TaskID:    generateTaskID(),
+		Action:    action,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	return message
+}
+
+func createComment(issueNumber int, message GundoMessage) error {
+
+	// FLOW: take GundoMessage --> marshal to JSON --> create comment request struct --> marshal to JSON --> send POST request to GitHub API
+
+	// marshal GundoMessage to JSON
+	jsonData, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("error marshalling JSON: %w", err)
+	}
+
+	// wrap the JSON data into a CommentRequest struct
+	commentRequest := CommentRequest{
+		Body: string(jsonData),
+	}
+
+	// marshal the CommentRequest struct to JSON to be sent in the request body
+	commentJSON, err := json.Marshal(commentRequest)
+	if err != nil {
+		return fmt.Errorf("error marshalling comment JSON: %w", err)
+	}
+
+	// post process to put comment on the issue number
+	url := fmt.Sprintf("https://api.github.com/repos/mamadub03/gundo-test-repo/issues/%d/comments", issueNumber)
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(commentJSON))
+	if err != nil {
+		return fmt.Errorf("error creating request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
+	req.Header.Set("User-Agent", "gundo")
+
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		return fmt.Errorf("GITHUB_TOKEN environment variable is not set")
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	// setting up the client to send the request and get the response to ensure the comment was created successfully
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		var gitHubError GitHubErrorResponse
+		decoder := json.NewDecoder(resp.Body)
+		err = decoder.Decode(&gitHubError)
+		if err != nil {
+			return fmt.Errorf("error decoding GitHub error response: %w", err)
+		}
+		return fmt.Errorf("GitHub request failed: %s, message: %s", resp.Status, gitHubError.Message)
+	}
+
+	return nil
+}
 func main() {
 
 	issue := IssueRequest{
@@ -267,12 +346,17 @@ type IssueComment struct {
 type GundoMessage struct {
 
 	// struct for the gundo message that will be sent to the github issue comment
+	// omitemtpy is used to not include JSON when marshaling if the field is empty
+	Type      string `json:"type"`
+	TaskID    string `json:"task_id"`
+	Action    string `json:"action,omitempty"`
+	Output    string `json:"output,omitempty"`
+	Timestamp string `json:"timestamp"`
+}
 
-	TYPE      string `json:"type"`
-	TASKID    string `json:"task_id"`
-	ACTION    string `json:"action"`
-	OUTPUT    string `json:"output"`
-	TIMESTAMP string `json:"timestamp"`
+type CommentRequest struct {
+	// struct for the comment request that will be sent to the github issue comment
+	Body string `json:"body"`
 }
 
 type GitHubErrorResponse struct {
