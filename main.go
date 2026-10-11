@@ -322,7 +322,22 @@ func main() {
 	fmt.Printf("Issue created successfully! Number: %d, Title: %s, URL: %s\n", createdIssue.Number, createdIssue.Title, createdIssue.HTMLURL)
 	fmt.Printf("Retrieved issue! Number: %d, Title: %s, URL: %s\n", retrievedIssue.Number, retrievedIssue.Title, retrievedIssue.HTMLURL)
 
-	pollComments(17)
+	// pollComments(17)
+
+	comment := GundoMessage{
+		Type:      "task",
+		TaskID:    generateTaskID(),
+		Action:    "get_hostname",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	err = createComment(30, comment)
+	if err != nil {
+		fmt.Printf("Error creating comment: %v\n", err)
+		return
+	}
+
+	fmt.Println("Comment created successfully!")
 }
 
 type IssueRequest struct {
