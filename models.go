@@ -17,10 +17,22 @@ type IssueComment struct {
 }
 
 type GundoMessage struct {
-	Type      string `json:"type"`
-	TaskID    string `json:"task_id"`
-	Action    string `json:"action,omitempty"`
-	Output    string `json:"output,omitempty"`
+	Type           string `json:"type"`
+	TaskID         string `json:"task_id,omitempty"`
+	TargetClientID string `json:"target_client_id,omitempty"`
+	ClientID       string `json:"client_id,omitempty"`
+
+	Action string `json:"action,omitempty"`
+	Input  string `json:"input,omitempty"`
+
+	Output string `json:"output,omitempty"`
+	Status string `json:"status,omitempty"`
+
+	OS            string `json:"os,omitempty"`
+	Version       string `json:"version,omitempty"`
+	StartedAt     string `json:"started_at,omitempty"`
+	UptimeSeconds int64  `json:"uptime_seconds,omitempty"`
+
 	Timestamp string `json:"timestamp"`
 }
 
