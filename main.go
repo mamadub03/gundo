@@ -84,23 +84,63 @@ package main
 import (
 	"fmt"
 	"os"
+	"uuid"
 )
 
 // setup a runclient + a runcontroller for testing purposes
 
 func runClient() {
-	const issueNumber = 30
+	var state ClientState
 
-	client, err := newClient()
-	if err != nil {
-		fmt.Printf("Client initialization failed: %v\n", err)
+	savedState, err := loadState()
+
+	if err == nil {
+		state = savedState
+
+		fmt.Printf("[+] Loaded existing client\n")
+		fmt.Printf("[+] Client ID: %s\n", state.ClientID)
+		fmt.Printf("[+] Mailbox: Issue #%d\n", state.IssueNumber)
+
+	} else if os.IsNotExist(err) {
+
+		fmt.Println("[+] First run detected")
+
+		clientID := uuid.New().String()
+
+		issue := IssueRequest{
+			Title: "Gundo Client - " + clientID,
+			Body:  "Gundo client mailbox",
+		}
+
+		createdIssue, err := createIssue(issue)
+		if err != nil {
+			fmt.Printf("Failed to create mailbox: %v\n", err)
+			return
+		}
+
+		state = ClientState{
+			ClientID:    clientID,
+			IssueNumber: createdIssue.Number,
+		}
+
+		if err := saveState(state); err != nil {
+			fmt.Printf("Failed to save client state: %v\n", err)
+			return
+		}
+
+		fmt.Printf("[+] Created Client ID: %s\n", state.ClientID)
+		fmt.Printf("[+] Created mailbox: Issue #%d\n", state.IssueNumber)
+
+	} else {
+		fmt.Printf("Failed to load state: %v\n", err)
 		return
 	}
 
-	fmt.Println("=== Gundo Client ===")
-	fmt.Printf("Client ID: %s\n", client.ID)
+	client := newClient(state.ClientID)
 
-	client.pollTasks(issueNumber)
+	// registration comes here next
+
+	client.pollTasks(state.IssueNumber)
 }
 
 func runController(clientID string) {
