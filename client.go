@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
+
 	"uuid"
 )
 
@@ -23,14 +26,61 @@ type Client struct {
 	// Processed map[string]struct{}
 }
 
+// checks to see if there is a ClientID generated
+// if not generates a new one
+func loadOrCreateClientID() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("get config directory: %w", err)
+	}
+
+	gundoDir := filepath.Join(configDir, "gundo")
+
+	if err := os.MkdirAll(gundoDir, 0700); err != nil {
+		return "", fmt.Errorf("create gundo config directory: %w", err)
+	}
+
+	idPath := filepath.Join(gundoDir, "client_id")
+
+	data, err := os.ReadFile(idPath)
+
+	// Existing ID found
+	if err == nil {
+		id := strings.TrimSpace(string(data))
+
+		if id != "" {
+			return id, nil
+		}
+	}
+
+	// Something failed other than "file doesn't exist"
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("read client ID: %w", err)
+	}
+
+	// First run: generate persistent ID
+	id := uuid.New().String()
+
+	if err := os.WriteFile(idPath, []byte(id), 0600); err != nil {
+		return "", fmt.Errorf("save client ID: %w", err)
+	}
+
+	return id, nil
+}
+
 // function to create a new client struct in memory and returns its address.
 // that way we can actually modify the values in memory rather than a copy
-func newClient() *Client {
+func newClient() (*Client, error) {
+	clientID, err := loadOrCreateClientID()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Client{
-		ID:        uuid.New().String(),
+		ID:        clientID,
 		Version:   clientVersion,
 		StartedAt: time.Now().UTC(),
-	}
+	}, nil
 }
 
 /*

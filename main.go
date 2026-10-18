@@ -91,7 +91,11 @@ import (
 func runClient() {
 	const issueNumber = 30
 
-	client := newClient()
+	client, err := newClient()
+	if err != nil {
+		fmt.Printf("Client initialization failed: %v\n", err)
+		return
+	}
 
 	fmt.Println("=== Gundo Client ===")
 	fmt.Printf("Client ID: %s\n", client.ID)

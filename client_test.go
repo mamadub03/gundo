@@ -8,7 +8,11 @@ import (
 )
 
 func TestHandlePing(t *testing.T) {
-	client := newClient()
+
+	client, err := newClient()
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
 
 	task := GundoMessage{
 		Type:   "task",
@@ -40,7 +44,10 @@ func TestHandlePing(t *testing.T) {
 }
 
 func TestHandleGetHostname(t *testing.T) {
-	client := newClient()
+	client, err := newClient()
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
 
 	task := GundoMessage{
 		Type:   "task",
@@ -61,8 +68,10 @@ func TestHandleGetHostname(t *testing.T) {
 }
 
 func TestHandleGetOS(t *testing.T) {
-	client := newClient()
-
+	client, err := newClient()
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
 	task := GundoMessage{
 		Type:   "task",
 		TaskID: "task-os",
@@ -77,7 +86,10 @@ func TestHandleGetOS(t *testing.T) {
 }
 
 func TestHandleGetUser(t *testing.T) {
-	client := newClient()
+	client, err := newClient()
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
 
 	task := GundoMessage{
 		Type:   "task",
@@ -98,7 +110,10 @@ func TestHandleGetUser(t *testing.T) {
 }
 
 func TestHandleUnsupportedAction(t *testing.T) {
-	client := newClient()
+	client, err := newClient()
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
 
 	task := GundoMessage{
 		Type:   "task",

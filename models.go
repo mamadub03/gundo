@@ -16,6 +16,9 @@ type IssueComment struct {
 	Body string `json:"body"`
 }
 
+// let's create a matrix on who does what
+// even better later we can seperate the types of messages as it is growing
+
 type GundoMessage struct {
 	Type           string `json:"type"`
 	TaskID         string `json:"task_id,omitempty"`
