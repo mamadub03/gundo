@@ -84,6 +84,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 	"uuid"
 )
 
@@ -139,6 +140,37 @@ func runClient() {
 	client := newClient(state.ClientID)
 
 	client.pollTasks(state.IssueNumber)
+}
+
+func waitForResult(issueNumber int, taskID string) (GundoMessage, error) {
+	for {
+		comments, err := listComments(issueNumber)
+		if err != nil {
+			return GundoMessage{}, err
+		}
+
+		for _, comment := range comments {
+			message, err := parseGundoMessage(comment.Body)
+			if err != nil {
+				continue
+			}
+
+			// We only care about result messages.
+			if message.Type != "result" {
+				continue
+			}
+
+			// We only want the result belonging to
+			// the task the controller just sent.
+			if message.TaskID != taskID {
+				continue
+			}
+
+			return message, nil
+		}
+
+		time.Sleep(5 * time.Second)
+	}
 }
 
 func runController(clientID string) {
