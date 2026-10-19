@@ -11,7 +11,8 @@ import (
 // fixed client version rep
 const clientVersion = "0.1.0"
 
-// in memory state that payload/process is running. It gives us a place to handle client specific behavior
+// in memory state that payload/process is running.
+// It gives us a place to handle client specific behavior
 
 type Client struct {
 	ID        string

@@ -20,10 +20,14 @@ type IssueComment struct {
 // even better later we can seperate the types of messages as it is growing
 
 type GundoMessage struct {
-	Type           string `json:"type"`
-	TaskID         string `json:"task_id,omitempty"`
+	Type   string `json:"type"`
+	TaskID string `json:"task_id,omitempty"`
+
+	// used in going from controller to client
 	TargetClientID string `json:"target_client_id,omitempty"`
-	ClientID       string `json:"client_id,omitempty"`
+
+	// used in going from client to controller
+	ClientID string `json:"client_id,omitempty"`
 
 	Action string `json:"action,omitempty"`
 	Input  string `json:"input,omitempty"`

@@ -138,8 +138,6 @@ func runClient() {
 
 	client := newClient(state.ClientID)
 
-	// registration comes here next
-
 	client.pollTasks(state.IssueNumber)
 }
 
