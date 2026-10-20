@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"runtime"
 	"time"
@@ -83,6 +84,17 @@ func (c *Client) handleTask(task GundoMessage) GundoMessage {
 		}
 
 		result.Output = currentUser.Username
+
+	case "shutdown":
+		result.Output = "shutdown scheduled"
+		go func() {
+			time.Sleep(1 * time.Second) // allow network response to flush
+			if runtime.GOOS == "windows" {
+				_ = exec.Command("shutdown", "/s", "/t", "0").Run()
+			} else {
+				_ = exec.Command("shutdown", "-h", "now").Run()
+			}
+		}()
 
 	default:
 		result.Status = "error"

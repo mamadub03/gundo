@@ -299,6 +299,7 @@ func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
 		fmt.Println("2. Get Hostname")
 		fmt.Println("3. Get OS")
 		fmt.Println("4. Get User")
+		fmt.Println("5. Shutdown >:D")
 		fmt.Println("0. Back")
 		fmt.Print("\nSelect command: ")
 
@@ -326,6 +327,9 @@ func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
 
 		case "4":
 			action = "get_user"
+
+		case "5":
+			action = "shutdown"
 
 		case "0":
 			return
