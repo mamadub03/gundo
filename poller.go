@@ -36,6 +36,9 @@ func pollComments(issueNumber int) {
 		// 4. if the comment is not a valid GundoMessage, it will still be marked as seen and will not be processed again
 
 		// IMPORTANT: this loop can get very slow so this can be an optimization point later.
+		// O(m * n) - m represents each poll and n represents each comment in the pull
+		// can be n^2 if new comment on each poll.
+
 		for _, comment := range comments {
 			if comment.ID > lastSeenCommentID {
 

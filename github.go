@@ -239,3 +239,59 @@ func createComment(issueNumber int, message GundoMessage) error {
 
 	return nil
 }
+
+func listIssues() ([]IssueResponse, error) {
+
+	// grab issues that are available and represent each agent
+
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		return nil, fmt.Errorf("GITHUB_TOKEN is not set")
+	}
+
+	url := "https://api.github.com/repos/mamadub03/gundo-test-repo/issues?state=open&per_page=100"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "gundo")
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error listing issues: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var githubErr GitHubErrorResponse
+
+		if err := json.NewDecoder(resp.Body).Decode(&githubErr); err != nil {
+			return nil, fmt.Errorf(
+				"GitHub returned status %d",
+				resp.StatusCode,
+			)
+		}
+
+		return nil, fmt.Errorf(
+			"GitHub error: %s",
+			githubErr.Message,
+		)
+	}
+
+	var issues []IssueResponse
+
+	// decode results on the response body into issues struct if not give erro
+
+	if err := json.NewDecoder(resp.Body).Decode(&issues); err != nil {
+		return nil, fmt.Errorf("error decoding issues: %w", err)
+	}
+
+	return issues, nil
+}
