@@ -89,13 +89,13 @@ func discoverClients() ([]ManagedClient, error) {
 				continue
 			}
 
-			fmt.Printf(
-				"[DEBUG] Issue #%d | Type=%q ClientID=%q Timestamp=%q\n",
-				issue.Number,
-				message.Type,
-				message.ClientID,
-				message.Timestamp,
-			)
+			// fmt.Printf(
+			// 	"[DEBUG] Issue #%d | Type=%q ClientID=%q Timestamp=%q\n",
+			// 	issue.Number,
+			// 	message.Type,
+			// 	message.ClientID,
+			// 	message.Timestamp,
+			// )
 
 			if message.Type != "heartbeat" {
 				continue
