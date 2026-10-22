@@ -32,6 +32,9 @@ type GundoMessage struct {
 	Action string `json:"action,omitempty"`
 	Input  string `json:"input,omitempty"`
 
+	//using command to have cleaner field for custom commands
+	Command string `json:"command,omitempty"`
+
 	Output string `json:"output,omitempty"`
 	Status string `json:"status,omitempty"`
 

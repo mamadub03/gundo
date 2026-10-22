@@ -124,7 +124,10 @@ func getIssue(issueNumber int) (IssueResponse, error) {
 
 func listComments(issueNumber int) ([]IssueComment, error) {
 
-	url := fmt.Sprintf("https://api.github.com/repos/mamadub03/gundo-test-repo/issues/%d/comments", issueNumber)
+	url := fmt.Sprintf(
+		"https://api.github.com/repos/mamadub03/gundo-test-repo/issues/%d/comments?per_page=100",
+		issueNumber,
+	)
 
 	// create a new HTTP request to the API endpoint
 	req, err := http.NewRequest(http.MethodGet, url, nil)
