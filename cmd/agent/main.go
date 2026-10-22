@@ -11,7 +11,7 @@ import (
 
 // repo is the GitHub repo the agent will poll.
 // Format: "owner/repo" — must match where the server creates issues.
-const repo = "kkirabo/c2prototype"
+const repo = "kkirabo/newest"
 
 func usage() {
 	fmt.Println("Usage:")

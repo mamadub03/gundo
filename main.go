@@ -13,7 +13,7 @@ import (
 // c2 operator
 const (
 	ghOwner = "kkirabo"
-	ghRepo  = "c2prototype"
+	ghRepo  = "newest"
 )
 
 // syntax helper
