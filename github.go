@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 func createIssue(issue IssueRequest) (IssueResponse, error) {
@@ -126,20 +127,34 @@ func getIssue(issueNumber int) (IssueResponse, error) {
 }
 
 func listComments(issueNumber int) ([]IssueComment, error) {
+	return listCommentsSince(issueNumber, time.Time{})
+}
+
+// A zero boundary keeps full-history reads available for the initial baseline.
+func listCommentsSince(issueNumber int, since time.Time) ([]IssueComment, error) {
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
 		return nil, fmt.Errorf("GITHUB_TOKEN environment variable is not set")
 	}
-	return listCommentsWithClient(issueNumber, &http.Client{}, token)
+	return listCommentsSinceWithClient(issueNumber, &http.Client{}, token, since)
 }
 
 // The injected client lets tests exercise real pagination with in-memory HTTP
 // responses, without reading credentials or contacting GitHub.
 func listCommentsWithClient(issueNumber int, client *http.Client, token string) ([]IssueComment, error) {
+	return listCommentsSinceWithClient(issueNumber, client, token, time.Time{})
+}
+
+func listCommentsSinceWithClient(issueNumber int, client *http.Client, token string, since time.Time) ([]IssueComment, error) {
 	nextURL := fmt.Sprintf(
 		"https://api.github.com/repos/mamadub03/gundo-test-repo/issues/%d/comments?per_page=100",
 		issueNumber,
 	)
+	if !since.IsZero() {
+		// Filter on GitHub before downloading pages. Keep this boundary fixed for
+		// the entire read, following the returned next links just as in Phase 1.
+		nextURL += "&since=" + url.QueryEscape(since.UTC().Format(time.RFC3339))
+	}
 	var comments []IssueComment
 	visited := make(map[string]bool)
 	for nextURL != "" {
@@ -280,13 +295,28 @@ func splitCommentLinks(header string) ([]string, error) {
 }
 
 func createComment(issueNumber int, message GundoMessage) error {
+	_, err := createCommentWithMetadata(issueNumber, message)
+	return err
+}
+
+// Retain the created task's transport bookmark before waiting for its result.
+// Heartbeat/result callers can continue using the error-only createComment API.
+func createCommentWithMetadata(issueNumber int, message GundoMessage) (IssueComment, error) {
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		return IssueComment{}, fmt.Errorf("GITHUB_TOKEN environment variable is not set")
+	}
+	return createCommentWithClient(issueNumber, message, &http.Client{}, token)
+}
+
+func createCommentWithClient(issueNumber int, message GundoMessage, client *http.Client, token string) (IssueComment, error) {
 
 	// FLOW: take GundoMessage --> marshal to JSON --> create comment request struct --> marshal to JSON --> send POST request to GitHub API
 
 	// marshal GundoMessage to JSON
 	jsonData, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("error marshalling JSON: %w", err)
+		return IssueComment{}, fmt.Errorf("error marshalling JSON: %w", err)
 	}
 
 	// wrap the JSON data into a CommentRequest struct
@@ -297,7 +327,7 @@ func createComment(issueNumber int, message GundoMessage) error {
 	// marshal the CommentRequest struct to JSON to be sent in the request body
 	commentJSON, err := json.Marshal(commentRequest)
 	if err != nil {
-		return fmt.Errorf("error marshalling comment JSON: %w", err)
+		return IssueComment{}, fmt.Errorf("error marshalling comment JSON: %w", err)
 	}
 
 	// post process to put comment on the issue number
@@ -305,7 +335,7 @@ func createComment(issueNumber int, message GundoMessage) error {
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(commentJSON))
 	if err != nil {
-		return fmt.Errorf("error creating request: %w", err)
+		return IssueComment{}, fmt.Errorf("error creating request: %w", err)
 	}
 
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -313,17 +343,12 @@ func createComment(issueNumber int, message GundoMessage) error {
 	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
 	req.Header.Set("User-Agent", "gundo")
 
-	token := os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		return fmt.Errorf("GITHUB_TOKEN environment variable is not set")
-	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	// setting up the client to send the request and get the response to ensure the comment was created successfully
-	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("error sending request: %w", err)
+		return IssueComment{}, fmt.Errorf("error sending request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -332,12 +357,19 @@ func createComment(issueNumber int, message GundoMessage) error {
 		decoder := json.NewDecoder(resp.Body)
 		err = decoder.Decode(&gitHubError)
 		if err != nil {
-			return fmt.Errorf("error decoding GitHub error response: %w", err)
+			return IssueComment{}, fmt.Errorf("error decoding GitHub error response: %w", err)
 		}
-		return fmt.Errorf("GitHub request failed: %s, message: %s", resp.Status, gitHubError.Message)
+		return IssueComment{}, fmt.Errorf("GitHub request failed: %s, message: %s", resp.Status, gitHubError.Message)
 	}
 
-	return nil
+	var created IssueComment
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return IssueComment{}, fmt.Errorf("comment was created but its response could not be decoded: %w", err)
+	}
+	if created.ID <= 0 || created.CreatedAt.IsZero() {
+		return IssueComment{}, fmt.Errorf("comment was created but its ID or created_at is missing")
+	}
+	return created, nil
 }
 
 func listIssues() ([]IssueResponse, error) {

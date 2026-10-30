@@ -18,7 +18,15 @@ type ManagedClient struct {
 	Online      bool
 }
 
-func discoverClients() ([]ManagedClient, error) {
+// Discovery retains only a bookmark and the latest heartbeat per mailbox,
+// rather than keeping every historical comment in memory.
+type discoveryMailbox struct {
+	ClientID   string
+	Checkpoint commentCheckpoint
+	LastSeen   time.Time
+}
+
+func discoverClients(mailboxes map[int]discoveryMailbox) ([]ManagedClient, error) {
 	// process used to discover available cinets
 
 	// list all the issues representing the clients
@@ -26,7 +34,11 @@ func discoverClients() ([]ManagedClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	return discoverClientsFromIssues(issues, mailboxes, listCommentsSince)
+}
 
+func discoverClientsFromIssues(issues []IssueResponse, mailboxes map[int]discoveryMailbox,
+	list func(int, time.Time) ([]IssueComment, error)) ([]ManagedClient, error) {
 	// list representing structs of clients
 	var clients []ManagedClient
 
@@ -49,16 +61,21 @@ func discoverClients() ([]ManagedClient, error) {
 			issue.Title,
 			clientTitlePrefix,
 		)
+		mailbox := mailboxes[issue.Number]
+		if mailbox.ClientID != clientID {
+			mailbox = discoveryMailbox{ClientID: clientID}
+		}
 
 		// creating a new managed client for the valid agent issue
 		managedClient := ManagedClient{
 			ClientID:    clientID,
 			IssueNumber: issue.Number,
+			LastSeen:    mailbox.LastSeen,
 			Online:      false,
 		}
 
 		// receive comments to find heartbeat
-		comments, err := listComments(issue.Number)
+		comments, err := mailbox.Checkpoint.poll(issue.Number, list)
 		fmt.Printf(
 			"[DEBUG] Issue #%d returned %d comments\n",
 			issue.Number,
@@ -134,12 +151,14 @@ func discoverClients() ([]ManagedClient, error) {
 
 			managedClient.LastSeen = heartbeatTime
 
-			if age < offlineThreshold {
-				managedClient.Online = true
-			}
-
 			break
 		}
+
+		mailbox.LastSeen = managedClient.LastSeen
+		mailboxes[issue.Number] = mailbox
+		// No new heartbeat means keep the old observation, but recalculate its
+		// age on every refresh so an inactive client eventually becomes offline.
+		managedClient.Online = !managedClient.LastSeen.IsZero() && time.Since(managedClient.LastSeen) < offlineThreshold
 
 		// adds client to the list of clients structs
 		clients = append(clients, managedClient)
@@ -208,10 +227,17 @@ func runClient() {
 
 // polling comments to poll comments and grab results
 // CLI version of pollComments()
-func waitForResult(issueNumber int, taskID string) (GundoMessage, error) {
+func waitForResult(issueNumber int, taskID string, checkpoint commentCheckpoint) (GundoMessage, error) {
+	return waitForResultWithPolling(issueNumber, taskID, checkpoint, listCommentsSince, time.Sleep)
+}
+
+// Inject the read and sleep operations so tests can run multiple real polling
+// iterations without network access or waiting five seconds between them.
+func waitForResultWithPolling(issueNumber int, taskID string, checkpoint commentCheckpoint,
+	list func(int, time.Time) ([]IssueComment, error), sleep func(time.Duration)) (GundoMessage, error) {
 	for {
 		// grab comments
-		comments, err := listComments(issueNumber)
+		comments, err := checkpoint.poll(issueNumber, list)
 		if err != nil {
 			return GundoMessage{}, err
 		}
@@ -237,7 +263,7 @@ func waitForResult(issueNumber int, taskID string) (GundoMessage, error) {
 			return message, nil
 		}
 
-		time.Sleep(5 * time.Second)
+		sleep(5 * time.Second)
 	}
 }
 
@@ -297,7 +323,7 @@ func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
 		fmt.Printf("[+] Task ID: %s\n", task.TaskID)
 
 		// creates comment with the task message
-		err = createComment(client.IssueNumber, task)
+		createdTask, err := createCommentWithMetadata(client.IssueNumber, task)
 		if err != nil {
 			fmt.Printf("Error sending task: %v\n", err)
 			continue
@@ -309,6 +335,9 @@ func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
 		result, err := waitForResult(
 			client.IssueNumber,
 			task.TaskID,
+			// The POST response gives the boundary before a fast result can be
+			// missed by a separate baseline read. TaskID still correlates results.
+			commentCheckpoint{LastSeenCommentID: createdTask.ID, CreatedAt: createdTask.CreatedAt},
 		)
 
 		if err != nil {
@@ -327,11 +356,13 @@ func runController() {
 
 	// read buffer for terminal
 	reader := bufio.NewReader(os.Stdin)
+	// Keep discovery progress across menu refreshes, independent of result waits.
+	mailboxes := make(map[int]discoveryMailbox)
 
 	for {
 		// creates list of clients
 
-		clients, err := discoverClients()
+		clients, err := discoverClients(mailboxes)
 		if err != nil {
 			fmt.Printf("Failed to discover clients: %v\n", err)
 			return

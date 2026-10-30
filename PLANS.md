@@ -31,13 +31,15 @@ These reflect the **last confirmed conversation milestone**, not a fresh source-
 **Verification (October 30, 2026):** Pagination is implemented with explanatory code comments. In-memory HTTP tests verify ordered complete retrieval, task/heartbeat/result fixtures beyond page one, missing/malformed links, repeated links, response-body closure, and subsequent-page HTTP/network/JSON failures. `gofmt`, `go test ./...`, `go vet ./...`, and `go build -o /private/tmp/gundo-pagination-verification-20261030 ./...` passed using the local toolchain with network dependency lookups disabled and `GITHUB_TOKEN` removed from the check processes. No real credentials or live GitHub requests were used. End-to-end consumer confirmation on the existing Mac-controller/Windows-client environment remains pending; the fixtures test retrieval and message parsing, not execution of the consumer loops.
 
 ### P1 — Incremental and conditional polling
-- [ ] Design per-consumer cursors so routine polls do **not** reread every historical page.
+- [x] Design per-consumer in-memory bookmarks so routine polls do **not** reread every historical page.
 - [ ] Preserve comment/task delivery semantics across polling boundaries and restarts; investigate offline tasks and result retry behavior.
-- [ ] Evaluate GitHub comments `since` with update-time semantics and overlap/dedup safeguards.
+- [x] Evaluate GitHub comments `since` with update-time semantics and overlap/ID filtering safeguards.
 - [ ] Use `ETag` / `If-None-Match` and handle `304 Not Modified` where request semantics permit.
-- [ ] Test zero-change polls, simultaneous comments, edits, duplicate comments, and pagination during active posting.
+- [x] Test zero-change polls, simultaneous timestamps, repeated/changed old IDs, and pagination during active posting.
 
 **Acceptance:** Existing comment history does not make steady-state API usage grow linearly with Issue age, and newly posted messages are not missed.
+
+**Phase 2 verification (October 30, 2026):** Implemented `since` filtering with a one-second overlap before the newest seen comment's GitHub `created_at`, retaining the existing comment-ID check. Bookmarks advance only after complete successful retrieval and metadata validation, independently for task polling, each discovery mailbox, and each result wait. Startup still skips existing tasks; bookmarks are not persisted. Discovery retains its latest valid heartbeat and recalculates its age. Result waiting starts from the task POST response's ID/timestamp, avoiding a separate baseline read. Mocked tests cover same-second arrivals, empty mailboxes, missing timestamps, 100/101/250/1,000 new comments, failed-page recovery, task filtering, cached heartbeat expiry, and immediate results. A request-count test verifies ten initialization requests for 1,000 comments followed by one request per recent/quiet poll. `gofmt`, `go test ./...`, `go vet ./...`, `go build -o /private/tmp/gundo-incremental-verification-20261030 ./...`, and `git diff --check` passed. Check processes had `GITHUB_TOKEN` removed and dependency network lookups disabled; no real credentials or live GitHub requests were used. Manual Mac/Windows verification remains pending. ETags (Phase 3) and rate-limit resilience (Phase 4) are not implemented.
 
 ### P2 — Rate-limit and HTTP resilience
 - [ ] Centralize/reuse an `http.Client` with request timeouts and appropriate cancellation.
@@ -86,4 +88,4 @@ These reflect the **last confirmed conversation milestone**, not a fresh source-
 4. Have Codex implement and run observable tests; inspect its diff and explanation.
 5. Check completed items and record any new architectural decision in `docs/DECISIONS.md`.
 
-**Current starting point:** P0 pagination is implemented and automated checks pass; live Mac/Windows verification remains pending. Incremental polling, conditional requests, and rate-limit resilience each require separate approval before implementation. Deleted-Issue recovery is intentionally later.
+**Current starting point:** Pagination and Phase 2 incremental polling are implemented and automated checks pass; live Mac/Windows verification remains pending. Stop here: conditional requests (Phase 3) and rate-limit resilience (Phase 4) each require separate approval before implementation. Deleted-Issue recovery is intentionally later.

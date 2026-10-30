@@ -87,6 +87,10 @@ Historically all these Go source files used `package main`, so the development i
 
 These timing values describe the last discussed implementation, not promised configuration defaults.
 
+**Current polling implementation (Phase 2, October 2026):** `pollTasks()` performs a full paginated startup read to establish its baseline, then uses GitHub `since` filtering. A `commentCheckpoint` stores the highest seen comment ID and its GitHub `created_at`; requests start one second before that timestamp, and the ID check filters repeated comments. Empty mailboxes remain unfiltered until their first comment. Every matching page must succeed, with valid creation metadata for new IDs, before retrieval progress advances. Polling intervals and diagnostic actions are unchanged.
+
+The controller retains a separate bookmark and latest valid heartbeat for each discovery mailbox across menu refreshes, recalculating heartbeat age even when no new heartbeat arrives. Each result wait starts from the ID and timestamp returned when its task comment was posted, then polls independently. Checkpoints are in memory only; client state still contains only ClientID and IssueNumber. Failed result POSTs retain their existing logging behavior; durable delivery and retries are separate work.
+
 ## 7. Proven MVP milestone
 The team verified a **controller running on macOS and a Go client running on a separate physical Windows computer**. The Windows client maintained its own state and GitHub credential; the Mac controller independently discovered the client's Issue, tasked its fixed diagnostic actions, and received correlated results. Restart persistence and the basic heartbeat path were also tested.
 
@@ -97,10 +101,10 @@ A live investigation found `listComments()` returning exactly **30 comments** fr
 
 Correctness and efficiency are separate:
 
-1. **Pagination:** follow GitHub's `Link: ... rel="next"` response headers to retrieve all relevant pages when needed. This prevents truncation. It can increase API calls if every poll scans full history.
-2. **Incremental retrieval:** track processed comment IDs/time and fetch only new or changed comments where possible. GitHub's `since` parameter relates to comment updates; timestamp overlap, ordering, edits, and crash recovery require careful handling.
-3. **Conditional requests:** use `ETag` / `If-None-Match` for stable request URLs where appropriate; handle HTTP `304` without decoding a comment body.
-4. **Rate-limit resilience:** inspect rate-limit and retry headers, distinguish primary and secondary limits, and back off correctly rather than spinning or silently losing messages.
+1. **Pagination (implemented):** follow GitHub's `Link: ... rel="next"` response headers to retrieve all relevant pages when needed. This prevents truncation; failed reads do not return partial success.
+2. **Incremental retrieval (implemented):** use independent comment-ID/creation-time bookmarks and overlapping `since` queries. Existing IDs are ignored even if returned again; the current message workflow is append-only. Startup, checkpoint persistence, and durable result delivery are not redesigned by this phase.
+3. **Conditional requests (pending approval):** use `ETag` / `If-None-Match` for stable request URLs where appropriate; handle HTTP `304` without decoding a comment body.
+4. **Rate-limit resilience (pending approval):** inspect rate-limit and retry headers, distinguish primary and secondary limits, and back off correctly rather than spinning or silently losing messages.
 
 `listComments()` was used by **client task polling**, **controller heartbeat discovery**, and **result waiting**, so changes must preserve all three flows. `listIssues()` also historically used a single `per_page=100` request and needs a separate pagination review.
 

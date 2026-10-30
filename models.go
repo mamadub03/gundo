@@ -1,5 +1,7 @@
 package main
 
+import "time"
+
 type IssueRequest struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
@@ -14,6 +16,8 @@ type IssueResponse struct {
 type IssueComment struct {
 	ID   int64  `json:"id"`
 	Body string `json:"body"`
+	// Use GitHub's creation time for retrieval, not the message author's clock.
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // let's create a matrix on who does what
