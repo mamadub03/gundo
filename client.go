@@ -121,24 +121,6 @@ func (c *Client) handleTask(task GundoMessage) GundoMessage {
 
 		result.Output = currentUser.Username
 
-	case "shutdown":
-		result.Output = "shutdown scheduled"
-		go func() {
-			time.Sleep(1 * time.Second) // allow network response to flush
-			if runtime.GOOS == "windows" {
-				_ = exec.Command("shutdown", "/s", "/t", "0").Run()
-			} else {
-				_ = exec.Command("shutdown", "-h", "now").Run()
-			}
-		}()
-	case "custom":
-		if task.Command == "" {
-			result.Status = "error"
-			result.Output = "no command provided"
-			break
-		}
-		result.Output = execute(task.Command)
-
 	default:
 		result.Status = "error"
 		result.Output = "unsupported action"
