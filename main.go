@@ -76,11 +76,11 @@ func discoverClientsFromIssues(issues []IssueResponse, mailboxes map[int]discove
 
 		// receive comments to find heartbeat
 		comments, err := mailbox.Checkpoint.poll(issue.Number, list)
-		fmt.Printf(
-			"[DEBUG] Issue #%d returned %d comments\n",
-			issue.Number,
-			len(comments),
-		)
+		// fmt.Printf(
+		// 	"[DEBUG] Issue #%d returned %d comments\n",
+		// 	issue.Number,
+		// 	len(comments),
+		// )
 		if err != nil {
 			fmt.Printf(
 				"Could not read Issue #%d: %v\n",

@@ -190,7 +190,12 @@ func (c *Client) pollTasks(issueNumber int) {
 	fmt.Printf("[+] Client %s listening for tasks...\n", c.ID)
 
 	for {
-		if err := c.pollTasksOnce(issueNumber, &checkpoint, listCommentsSince, createComment); err != nil {
+		if err := c.pollTasksOnce(
+			issueNumber,
+			&checkpoint,
+			listCommentsSince,
+			createComment,
+		); err != nil {
 			fmt.Printf("Error polling comments: %v\n", err)
 		}
 		time.Sleep(10 * time.Second)
