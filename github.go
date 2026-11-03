@@ -7,10 +7,71 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 )
+
+// Setup checks identity first: a public Issues endpoint alone could succeed
+// without proving authentication. These GETs do not establish write permission.
+func validateGitHubToken(client *http.Client, token string) error {
+	checks := []struct {
+		url      string
+		identity bool
+	}{
+		{"https://api.github.com/user", true},
+		{"https://api.github.com/repos/mamadub03/gundo-test-repo/issues?state=all&per_page=1", false},
+	}
+	for _, check := range checks {
+		if err := checkTokenEndpoint(client, token, check.url, check.identity); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkTokenEndpoint(client *http.Client, token, endpoint string, identity bool) error {
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("could not construct authentication check")
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
+	req.Header.Set("User-Agent", "gundo")
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("could not reach GitHub during token validation; check the network and retry setup")
+	}
+	defer resp.Body.Close()
+	// Do not print response bodies or transport errors that could echo a secret.
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized:
+		return fmt.Errorf("GitHub rejected the token; check whether it is invalid, expired, or revoked")
+	case http.StatusForbidden:
+		return fmt.Errorf("GitHub denied validation (403); check permissions, repository policy, or rate limits")
+	case http.StatusNotFound:
+		return fmt.Errorf("GitHub resource unavailable (404); check repository access and existence")
+	case http.StatusTooManyRequests:
+		return fmt.Errorf("GitHub rate limited validation (429); retry setup later")
+	default:
+		return fmt.Errorf("GitHub validation returned HTTP %d; token was not saved", resp.StatusCode)
+	}
+	if identity {
+		var user struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&user); err != nil || user.ID <= 0 {
+			return fmt.Errorf("GitHub returned an invalid identity response; token was not saved")
+		}
+	} else {
+		var issues []IssueResponse
+		if err := json.NewDecoder(resp.Body).Decode(&issues); err != nil || issues == nil {
+			return fmt.Errorf("GitHub returned an invalid Issues response; token was not saved")
+		}
+	}
+	return nil
+}
 
 func createIssue(issue IssueRequest) (IssueResponse, error) {
 
@@ -34,9 +95,9 @@ func createIssue(issue IssueRequest) (IssueResponse, error) {
 	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
 	req.Header.Set("User-Agent", "gundo")
 
-	token := os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		return IssueResponse{}, fmt.Errorf("GITHUB_TOKEN environment variable is not set")
+	token, err := currentGitHubToken()
+	if err != nil {
+		return IssueResponse{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
@@ -86,9 +147,9 @@ func getIssue(issueNumber int) (IssueResponse, error) {
 	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
 	req.Header.Set("User-Agent", "gundo")
 
-	token := os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		return IssueResponse{}, fmt.Errorf("GITHUB_TOKEN environment variable is not set")
+	token, err := currentGitHubToken()
+	if err != nil {
+		return IssueResponse{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
@@ -132,9 +193,9 @@ func listComments(issueNumber int) ([]IssueComment, error) {
 
 // A zero boundary keeps full-history reads available for the initial baseline.
 func listCommentsSince(issueNumber int, since time.Time) ([]IssueComment, error) {
-	token := os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		return nil, fmt.Errorf("GITHUB_TOKEN environment variable is not set")
+	token, err := currentGitHubToken()
+	if err != nil {
+		return nil, err
 	}
 	return listCommentsSinceWithClient(issueNumber, &http.Client{}, token, since)
 }
@@ -302,9 +363,9 @@ func createComment(issueNumber int, message GundoMessage) error {
 // Retain the created task's transport bookmark before waiting for its result.
 // Heartbeat/result callers can continue using the error-only createComment API.
 func createCommentWithMetadata(issueNumber int, message GundoMessage) (IssueComment, error) {
-	token := os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		return IssueComment{}, fmt.Errorf("GITHUB_TOKEN environment variable is not set")
+	token, err := currentGitHubToken()
+	if err != nil {
+		return IssueComment{}, err
 	}
 	return createCommentWithClient(issueNumber, message, &http.Client{}, token)
 }
@@ -376,9 +437,9 @@ func listIssues() ([]IssueResponse, error) {
 
 	// grab issues that are available and represent each agent
 
-	token := os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		return nil, fmt.Errorf("GITHUB_TOKEN is not set")
+	token, err := currentGitHubToken()
+	if err != nil {
+		return nil, err
 	}
 
 	url := "https://api.github.com/repos/mamadub03/gundo-test-repo/issues?state=open&per_page=100"

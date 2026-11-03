@@ -114,3 +114,17 @@ Correctness and efficiency are separate:
 GitHub operations historically read `GITHUB_TOKEN` from the environment. The Mac workflow used a token stored in Keychain and exported into a terminal session; the Windows client had a **separate fine-grained GitHub PAT** scoped to the same authorized repository. Tokens should not be persisted in `state.json` or binaries.
 
 Deployment was proven manually with a cross-compiled Windows binary; repeatable packaging/provisioning, token rotation and secrets management remain development work. A future GitHub App may be worth evaluating but is **not** a confirmed MVP dependency.
+
+
+### Credential-store startup (November 2026)
+
+Before running either mode, Gundo loads one token from the current user's OS
+credential store (macOS Keychain / Windows Credential Manager). If absent,
+interactive hidden entry, read-only identity/Issues validation, and storage run
+before enrollment. `setup` explicitly provisions or replaces the credential
+without touching client state. A private process-wide token is initialized before
+any background goroutines and remains read-only during that run; GitHub API
+entry points use it instead of environment lookups. The credential is not
+exported to the environment. Authentication/storage failures stop setup.
+Read validation does not certify write permissions. Polling and identity
+semantics are unchanged. Actual platform credential-store verification is manual.

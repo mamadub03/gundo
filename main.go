@@ -437,15 +437,28 @@ func main() {
 		fmt.Println("Usage:")
 		fmt.Println("  go run . client")
 		fmt.Println("  go run . controller")
+		fmt.Println("  go run . setup  (save or replace the GitHub token)")
 		return
 	}
 
 	switch os.Args[1] {
-	case "client":
-		runClient()
-
-	case "controller":
-		runController()
+	case "client", "controller":
+		// Load once before enrollment or background work; missing credentials prompt here.
+		if err := initializeGitHubToken(); err != nil {
+			fmt.Fprintf(os.Stderr, "Authentication setup failed: %v\n", err)
+			os.Exit(1)
+		}
+		if os.Args[1] == "client" {
+			runClient()
+		} else {
+			runController()
+		}
+	case "setup":
+		// Credential replacement does not load or change the client's identity file.
+		if err := setupGitHubToken(); err != nil {
+			fmt.Fprintf(os.Stderr, "Token setup failed: %v\n", err)
+			os.Exit(1)
+		}
 
 	default:
 		fmt.Println("Unknown mode:", os.Args[1])

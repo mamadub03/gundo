@@ -65,7 +65,7 @@ These reflect the **last confirmed conversation milestone**, not a fresh source-
 - [ ] Review `listIssues()` pagination, issue filtering, and behavior when there are more than 100 mailbox Issues.
 - [ ] Add clear startup checks for missing/invalid `GITHUB_TOKEN` and insufficient repo permissions.
 - [ ] Document minimum fine-grained PAT permissions, expiration, rotation, and revocation; avoid tokens in logs/repo.
-- [ ] Choose deployment-time secrets provisioning approach (environment, protected secret store, or Ansible Vault if used). Evaluate GitHub App authentication only when warranted.
+- [x] Implement operator-entered tokens stored in the OS credential store, with automatic loading and explicit replacement; managed bulk provisioning remains future work.
 
 ### Deployment, quality, and operator UX
 - [ ] Build reproducible client/controller binaries for target operating systems; document supported architectures and setup.
@@ -88,4 +88,27 @@ These reflect the **last confirmed conversation milestone**, not a fresh source-
 4. Have Codex implement and run observable tests; inspect its diff and explanation.
 5. Check completed items and record any new architectural decision in `docs/DECISIONS.md`.
 
-**Current starting point:** Pagination and Phase 2 incremental polling are implemented and automated checks pass; live Mac/Windows verification remains pending. Stop here: conditional requests (Phase 3) and rate-limit resilience (Phase 4) each require separate approval before implementation. Deleted-Issue recovery is intentionally later.
+**Current starting point:** The user prioritized credential setup/deployment after the incremental-polling review. Credential-store setup is implemented and automated checks pass. Manual Mac/Windows credential-store and end-to-end verification remains pending. Conditional requests, rate-limit resilience, and deleted-Issue recovery remain separate, unimplemented work requiring approval.
+
+
+## Credential setup verification — November 3, 2026
+
+- [x] Hidden interactive input on missing credentials or explicit `setup`.
+- [x] OS credential storage and one-time startup loading; all five API entry points
+  use the in-memory token, with no `GITHUB_TOKEN` fallback or export.
+- [x] Read-only setup validation of identity and Issues access, with bounded
+  requests and distinct HTTP errors. Write permission is not certified.
+- [x] Mocked tests for saved/missing/locked/empty credentials, cancellation,
+  validation failure before replacement, storage failure, token replacement,
+  response closure, and API credential-source wiring.
+- [x] `gofmt`, `go test ./...` (passed), `go vet ./...`, native `go build`,
+  Windows amd64 cross-build, and `git diff --check` passed. Build outputs:
+  `/private/tmp/gundo-credentials-mac` and
+  `/private/tmp/gundo-credentials-windows.exe`.
+- [ ] Manually verify actual Keychain/Credential Manager setup, relaunch, replacement,
+  and the Mac-controller/Windows-client task/result workflow per README.
+
+Dependencies were downloaded with approval. Verification used fake credentials,
+mocked HTTP/storage, no real credential-store access, and no live GitHub API
+requests. Client identity, state-file schema, polling, and diagnostic actions
+were preserved. README and credential architecture/decisions were updated.

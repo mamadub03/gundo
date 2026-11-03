@@ -24,7 +24,7 @@
 **Decision:** Initial client actions are `ping`, `get_hostname`, `get_os`, and `get_user`; unsupported actions fail cleanly. **Why:** It gives a testable task/result lifecycle without introducing arbitrary remote execution or destructive operations. Maintenance tasks must preserve this boundary.
 
 ## D8 — Credentials belong outside client state (adopted)
-**Decision:** Use an externally supplied GitHub credential (`GITHUB_TOKEN` in the current design), with separate credentials per operator/client as appropriate. **Why:** Identity state should not hold secrets. **Later options:** improved provisioning, rotation, minimum scopes, and potentially GitHub App installation tokens; not assumptions about the current implementation.
+**Decision:** Keep credentials outside client state. Environment-based provisioning was the original implementation; D12 replaces it with OS credential storage. **Why:** Identity state should not hold secrets. **Later options:** improved provisioning, rotation, minimum scopes, and potentially GitHub App installation tokens; not assumptions about the current implementation.
 
 ## D9 — Correctness before API optimization (current engineering sequence)
 **Decision:** Fix truncated comment retrieval first, then incremental/conditional polling, then comprehensive rate-limit/retry behavior. **Why:** `per_page=100` alone fails on larger Issues, while naive pagination alone can increase request volume. The final design must avoid missed messages **and** repetitive history scans.
@@ -37,3 +37,18 @@
 
 ## Not yet adopted as completed v1 functionality
 A polished web dashboard, alternative SaaS transports (Calendar/Sheets/Reddit/etc.), generalized plugin system, MCP/Meta-glasses controller, AI-generated transport adapters, automated deployment and deleted-Issue recovery were discussed as possibilities or follow-up work. **Do not describe them as shipped without checking the live repository.**
+
+
+## D12 — OS credential storage and one-time setup (adopted)
+**Decision:** Prompt for a token without echo during explicit `setup` or when a
+mode starts without a saved credential. Validate identity and Issues read access,
+then store it with go-keyring under the current OS user. Load once into process
+memory before starting either mode; no environment fallback. **Why:** Eliminate
+repeated terminal token setup and environment exposure without introducing a
+hosted authentication service. **Scope:** One credential for the configured
+repository per OS user; separate machines can use different tokens. Replacement
+requires process restart and does not affect ClientID/IssueNumber. **Limits:**
+Read-only validation cannot prove write access. Keychain may prompt for approval;
+local administrators or the running user may still extract usable credentials.
+Store-access errors are not treated as absence. ETags, broad HTTP resilience,
+repository migration, and service installation remain separate work.

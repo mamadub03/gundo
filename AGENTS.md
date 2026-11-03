@@ -11,7 +11,7 @@ Read `docs/ARCHITECTURE.md` for the system, `docs/DECISIONS.md` for settled choi
 - Initial Issue creation is client enrollment. Do not invent a redundant registration workflow without a demonstrated need.
 - Controller/client communicate indirectly through GitHub. The controller does **not** need the client's local state file.
 - Retain the existing fixed, non-destructive diagnostic action allowlist unless a reviewed scope change explicitly calls for otherwise. Do not introduce remote shell, persistence, evasion, or destructive actions as part of maintenance work.
-- Do not embed GitHub tokens in code, test fixtures, tracked configuration, logs, or `state.json`. Prefer environment-provided credentials (`GITHUB_TOKEN` in the current design).
+- Do not embed GitHub tokens in code, test fixtures, tracked configuration, logs, or `state.json`. Use OS credential storage and hidden setup input; the approved credential-store design no longer reads `GITHUB_TOKEN`.
 - Treat GitHub errors distinctly: `404` is not equivalent to `401`, `403/429`, timeout, or `5xx`. Do not turn temporary failures into mailbox recreation or duplicate operations.
 
 ## How to work in this repository
