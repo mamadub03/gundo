@@ -123,13 +123,44 @@ func (s *Server) pollForResponse(issueNumber int, afterCommentID int64) (string,
 				continue
 			}
 
+			// Look for agent response comments posted after our [CMD] comment
+			var multiParts map[int]string
+			var expectedTotal int
+
 			for _, c := range comments {
-				// Only look at comments posted after our [CMD] comment
-				if c.ID > afterCommentID && strings.HasPrefix(c.Body, OutPrefix) {
-					// Strip the [OUT] prefix before returning
-					output := strings.TrimSpace(strings.TrimPrefix(c.Body, OutPrefix))
-					return output, nil
+				if c.ID <= afterCommentID || !strings.HasPrefix(c.Body, OutPrefix) {
+					continue
 				}
+
+				trimmed := strings.TrimSpace(strings.TrimPrefix(c.Body, OutPrefix))
+
+				// Check if this comment is part of a split/chunked output: [Part X/Y]
+				var partNum, totalParts int
+				if n, _ := fmt.Sscanf(trimmed, "[Part %d/%d]", &partNum, &totalParts); n == 2 && totalParts > 1 {
+					if multiParts == nil {
+						multiParts = make(map[int]string)
+						expectedTotal = totalParts
+					}
+					// Extract the body after the "[Part X/Y]\n" header line
+					lines := strings.SplitN(trimmed, "\n", 2)
+					partContent := ""
+					if len(lines) > 1 {
+						partContent = lines[1]
+					}
+					multiParts[partNum] = partContent
+
+					if len(multiParts) == expectedTotal {
+						var combined strings.Builder
+						for i := 1; i <= expectedTotal; i++ {
+							combined.WriteString(multiParts[i])
+						}
+						return strings.TrimSpace(combined.String()), nil
+					}
+					continue
+				}
+
+				// Standard (single-comment) output
+				return trimmed, nil
 			}
 		}
 	}

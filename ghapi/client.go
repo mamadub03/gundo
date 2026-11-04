@@ -164,25 +164,36 @@ func (c *Client) PostComment(issueNumber int, body string) (*Comment, error) {
 }
 
 // GetComments retrieves all comments on an issue thread in chronological order.
+// It paginates across all pages (by default GitHub truncates at 30 items per request).
 //
 // Called from: server/server.go → pollForResponse()
 //
 // API path: GET /repos/{owner}/{repo}/issues/{issue_number}/comments
-// Returns comments sorted oldest→newest. We find new agent replies by comparing
-// comment IDs: any comment with ID > the [CMD] comment ID came after the command.
-// GitHub comment IDs are globally unique and non-sequential per issue
-// (e.g. 6278798824). We use ID comparison (c.ID > afterID) to find new ones.
 func (c *Client) GetComments(issueNumber int) ([]Comment, error) {
-	path := fmt.Sprintf("/repos/%s/%s/issues/%d/comments", c.Owner, c.Repo, issueNumber)
+	var allComments []Comment
+	page := 1
 
-	data, err := c.do("GET", path, nil)
-	if err != nil {
-		return nil, err
+	for {
+		path := fmt.Sprintf("/repos/%s/%s/issues/%d/comments?per_page=100&page=%d", c.Owner, c.Repo, issueNumber, page)
+		data, err := c.do("GET", path, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var pageComments []Comment
+		if err := json.Unmarshal(data, &pageComments); err != nil {
+			return nil, fmt.Errorf("parsing comments response: %w", err)
+		}
+
+		if len(pageComments) == 0 {
+			break
+		}
+		allComments = append(allComments, pageComments...)
+		if len(pageComments) < 100 {
+			break
+		}
+		page++
 	}
 
-	var comments []Comment
-	if err := json.Unmarshal(data, &comments); err != nil {
-		return nil, fmt.Errorf("parsing comments response: %w", err)
-	}
-	return comments, nil
+	return allComments, nil
 }
