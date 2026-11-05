@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"reflect"
@@ -226,6 +225,6 @@ func TestProductionAPIsUseInitializedCredential(t *testing.T) {
 		t.Fatal("uninitialized API call succeeded")
 	}
 	if calls != 5 {
-		t.Fatal(fmt.Sprintf("uninitialized call reached HTTP: %d", calls))
+		t.Fatalf("uninitialized call reached HTTP: %d", calls)
 	}
 }

@@ -133,6 +133,7 @@ func createIssue(issue IssueRequest) (IssueResponse, error) {
 	return createdIssue, nil
 }
 
+// do not remove... used in credentials_test.go to test the GitHub API without making real requests
 func getIssue(issueNumber int) (IssueResponse, error) {
 
 	url := fmt.Sprintf("https://api.github.com/repos/mamadub03/gundo-test-repo/issues/%d", issueNumber)
