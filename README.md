@@ -125,9 +125,3 @@ Related defensive research and detection engineering efforts are maintained in s
 Gundo is intended exclusively for authorized red teaming, adversary emulation, educational environments, and controlled security assessments.
 
 Users are responsible for obtaining proper authorization before deployment and complying with applicable laws and third-party service policies.
-
----
-
-## License
-
-License information will be available in the repository's `LICENSE` file once selected.
