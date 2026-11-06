@@ -128,3 +128,16 @@ entry points use it instead of environment lookups. The credential is not
 exported to the environment. Authentication/storage failures stop setup.
 Read validation does not certify write permissions. Polling and identity
 semantics are unchanged. Actual platform credential-store verification is manual.
+
+
+### Operator console (November 2026)
+
+`console.go` owns terminal selection, colors, labels and safe output rendering;
+`main.go` still coordinates discovery, task submission and result waiting.
+`promptui` provides arrow-key selection with a numbered noninteractive fallback.
+The controller maintains Online/Offline snapshots, shows all agents by default,
+and offers explicit refresh/visibility choices. Transport checkpoints are
+unchanged. Waiting is synchronous with static text; spinners/cancellation remain
+future work. The live source also includes custom-command and shutdown menu
+paths, unlike the older four-diagnostic description above; this console change
+preserves those existing paths rather than adding execution capabilities.

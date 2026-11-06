@@ -112,3 +112,40 @@ Dependencies were downloaded with approval. Verification used fake credentials,
 mocked HTTP/storage, no real credential-store access, and no live GitHub API
 requests. Client identity, state-file schema, polling, and diagnostic actions
 were preserved. README and credential architecture/decisions were updated.
+
+
+## Operator console first increment — November 5, 2026
+
+- [x] Compact banner, colors, searchable arrow-key selection and plain numbered fallback.
+- [x] Online-first agent list with heartbeat age, shortened IDs plus Issue numbers,
+  explicit refresh and offline visibility toggle; Online/Offline only.
+- [x] Action/TaskID context and readable sanitized result output; removed discovery
+  debug noise and retained operational errors. Confirm existing shutdown action.
+- [x] Mocked tests passed for selection mapping, plain-input validation/EOF,
+  cancelled actions, output controls, and a complete task/result path.
+- [x] `gofmt`, `go test ./...`, `go vet ./...`, Mac build and Windows amd64
+  cross-build passed. Local fake-agent PTY preview verified arrow navigation and
+  selection. No real credentials or live GitHub API requests were used.
+- [ ] Manually verify live operator flow and Windows terminal appearance.
+
+Build outputs: `/private/tmp/gundo-console-mac` and
+`/private/tmp/gundo-console-windows.exe`. Spinners, cancellation and theme/alias
+configuration remain outside this increment.
+
+
+Console visual refinement: green block-letter Gundo banner, all agents visible
+initially, compact green Online/Offline labels with Issue numbers, and full
+identity/heartbeat detail on selection. Removed polling-interval explanation
+from task waiting output. Tests, vet, Mac/Windows builds and a fake-agent colored
+PTY preview passed; no live GitHub or credential access.
+
+Console navigation refinement: interactive screen redraws prevent stacked menus;
+results/errors require Enter before returning. Plain mode retains a transcript.
+Updated slanted ASCII banner. Screen/acknowledgement tests, full suite, vet,
+Mac/Windows builds, and fake-agent PTY navigation through result dismissal passed.
+
+Session-flow adjustment: removed extra Enter acknowledgements. Agent sessions
+retain action/result history and immediately offer the next action; screen
+clearing occurs at session/list navigation boundaries. Offline-selection feedback
+appears on the redrawn list. Updated mocked flow regression, full tests, vet,
+Mac/Windows builds passed; no live API requests.

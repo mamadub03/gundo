@@ -93,3 +93,37 @@ Manual Mac-controller/Windows-client verification (not performed automatically):
 Windows cross-compilation checks compilation only; it does not verify Windows
 Credential Manager behavior. No automatic retry, mailbox recovery, ETags, or
 background service installation is included in credential setup.
+
+## Operator console
+
+Run the existing `controller` mode for the banner and interactive agent/action
+menus. Use arrow keys and Enter, or `/` to search the visible entries. Ctrl+C
+backs out of a selection (exits from the agent list). Refresh and Quit are menu
+entries. All agents are shown initially; select Hide offline agents to narrow the list. Online agents sort first, then by Issue number. Compact rows show a green Online/Offline label and the agent
+Issue number; the selected-agent view shows the full ID and heartbeat age. No aliases are stored.
+
+Agent status remains Online/Offline and is a discovery snapshot, not a live
+background refresh. A failed mailbox read is logged and remains Offline, as
+before. Toggling the offline view uses the current snapshot without another
+GitHub request. Empty discovery results still allow refresh or quit.
+
+Action submission shows the selected action, target Issue and TaskID, followed by
+static waiting text and the final result/output. Shutdown requires typing `yes`;
+an empty custom-command input cancels that selection. Result output has terminal
+control sequences removed. There is no spinner, progress percentage, execution
+acknowledgment, or in-app cancellation of result waiting in this increment.
+
+Set `NO_COLOR` to disable colors. Set `GUNDO_PLAIN=1` to use numbered menus;
+non-terminal input/output and `TERM=dumb` also use the plain fallback. Enter `0`
+to back out of a numbered menu. Existing launch commands and credentials apply.
+
+Console verification: mocked tests cover selection mapping, cancellation without
+posting, sanitized output, and a full mocked ping/result path. A local PTY preview
+with fake agents verified arrow-down selection and result rendering. Mac and
+Windows builds pass; actual Windows terminal appearance and live GitHub use still
+need manual verification.
+
+Interactive console navigation redraws the screen when entering/leaving an agent,
+refreshing, or toggling the list. Within an agent session, action output and errors remain visible while the next
+action menu appears immediately; no extra Enter prompt is required. Plain/redirected output retains its transcript without clearing
+or extra acknowledgement prompts. The banner uses slanted green ASCII lettering.
