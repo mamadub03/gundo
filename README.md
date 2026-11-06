@@ -24,17 +24,17 @@ An open-source C2 framework built in Go for authorized red teaming and adversary
 
 ## Overview
 
-Gundo is a command-and-control (C2) framework that allows authorized red team operators to manage remote agents, issue commands, and retrieve execution results through third-party Software-as-a-Service (SaaS) platforms.
+Gundo is an open-source command-and-control (C2) framework built in Go for authorized red teaming and adversary emulation. It enables operators to manage remote agents, execute commands, and retrieve results using third-party Software-as-a-Service (SaaS) platforms as communication channels.
 
 ### Why Gundo?
 
-Traditional C2 frameworks often rely on agents communicating directly with dedicated command-and-control servers. These connections can expose operator-controlled infrastructure to defenders, making it easier to identify, investigate, or block during an engagement.
+Traditional C2 frameworks often rely on agents communicating directly with dedicated command servers. These connections can expose C2 infrastructure and provide defenders with identifiable network activity to investigate or block.
 
-**Gundo takes a different approach.**
+Gundo takes a different approach by routing C2 communication through legitimate SaaS platforms, beginning with GitHub Issues.
 
-Rather than requiring direct agent-to-controller connections, Gundo uses SaaS platforms such as GitHub to exchange commands and results.
+Instead of connecting directly to a C2 server, agents communicate with GitHub's API, allowing C2 activity to blend with ordinary SaaS traffic.
 
-This provides red team operators with an alternative communication method while allowing the framework to support additional SaaS services through its modular transport architecture.
+This provides red team operators with an alternative communication channel for authorized engagements while maintaining the ability to issue commands, manage agents, and retrieve results like a traditional C2.
 
 ---
 
