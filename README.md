@@ -1,129 +1,159 @@
+
 # Gundo
 
-Gundo is a Go-based controller/agent platform built for authorized
-collegiate red-team and cyber defense competitions.
+**A Modular SaaS-Based Command-and-Control Framework**
+
+An open-source command-and-control (C2) framework built in Go, exploring asynchronous communication through modular Software-as-a-Service (SaaS) transports.
+
+Gundo separates its operational, transport, and execution layers, enabling remote agents and controllers to exchange tasks and results through third-party SaaS APIs rather than communicating directly.
+
+**Go** · **GitHub Issues** · **Modular Architecture** · **Active Development**
+
+[Overview](#overview) · [Architecture](#architecture) · [Design Principles](#design-principles) · [Documentation](#documentation) · [Contributing](#contributing)
+
+---
+
+## Overview
+
+### Command-and-control through everyday services.
+
+Traditional C2 frameworks commonly rely on agents communicating directly with operator-controlled infrastructure.
+
+Gundo takes a different approach.
+
+Instead of requiring a direct connection between an agent and its controller, Gundo uses third-party SaaS platforms as intermediaries for exchanging tasks and results.
+
+Its initial transport uses **GitHub Issues**, demonstrating how an existing API can support asynchronous communication between distributed components.
+
+### Why Gundo?
+
+Gundo explores what happens when command-and-control communication is treated as a modular, asynchronous system rather than a direct connection between an agent and a server.
+
+By using SaaS APIs as transport infrastructure, the project investigates the engineering challenges of building reliable communication on platforms that were never designed for C2 operations.
+
+The goal is to provide an extensible framework for studying C2 architecture, distributed systems, API communication, and the tradeoffs introduced by alternative transport mechanisms.
+
+---
 
 ## Architecture
 
-Controller
-    ↓
-GitHub Issues / Comments
-    ↑
-Agent
+Gundo is designed around three primary components:
 
-GitHub Issues act as persistent agent mailboxes, while comments carry
-structured task and result messages.
+- **Controller:** Manages operator tasks and coordinates communication through the selected transport.
+- **Transport:** Handles communication between the controller and agents using a third-party SaaS API.
+- **Agent:** Retrieves tasks, processes instructions, and publishes execution results.
 
-## Project Structure
+### System Overview
 
-main.go       - controller entry point
-github.go     - GitHub transport
-messages.go   - Gundo message protocol
-models.go     - shared data models
-poller.go     - comment polling logic
-agent/        - agent implementation
+<!--
+Replace this placeholder after exporting your diagram from draw.io.
 
-## Credential setup and launching
+Suggested file location:
+assets/architecture/gundo-overview.svg
 
-Gundo stores its GitHub token in macOS Keychain or Windows Credential Manager
-for the OS user running Gundo. It no longer reads or sets `GITHUB_TOKEN`.
-Use a token scoped to the configured repository with Issues read/write access.
-The repository remains `mamadub03/gundo-test-repo`, configured in the source.
+Then uncomment the following line:
 
-Run from the directory containing `go.mod`:
+![Gundo High-Level Architecture](assets/architecture/gundo-overview.svg)
+-->
 
-```sh
-go run . setup
-go run . client
-# On the controller machine instead:
-go run . controller
-```
+*High-level architecture diagram coming soon.*
 
-With built binaries, use `./gundo setup` on Mac or `.\gundo.exe setup` on Windows,
-then the corresponding `client` or `controller` mode. Run setup under the same
-OS account that will launch Gundo. With no stored token, either mode prompts
-for one before enrollment or polling. Input is hidden; no token argument or
-environment export is needed. A missing terminal causes setup to fail clearly.
+### How It Works
 
-Setup performs two read-only requests: authenticated identity (`GET /user`),
-then one page with at most one Issue from the configured repository. Each
-request has a ten-second timeout and redirects are rejected. Successful setup
-proves authentication and Issues read access, **not** write permission. It does
-not create an Issue. Only the normal first client launch enrolls a new client.
-A rejected candidate token is not saved. Locked/inaccessible storage does not
-trigger automatic replacement or an environment/plaintext fallback.
+1. **Task Creation** — An operator submits a task to the controller.
+2. **Task Publication** — The controller publishes the task through the configured SaaS transport.
+3. **Task Retrieval** — An agent polls the transport for new tasks.
+4. **Task Execution** — The agent processes the task and generates a result.
+5. **Result Delivery** — The agent publishes its result through the transport for the controller to retrieve.
 
-Run `setup` again to replace an expired/revoked token. This does not change
-ClientID, IssueNumber, or `state.json`. Restart running processes afterward:
-each launch loads the stored token once into memory. Existing saved tokens
-are not preflight-validated on every launch; normal API errors still apply.
-Old environment settings are not removed automatically and are now ignored.
-Existing manually-created Keychain entries are not imported automatically.
+This architecture allows the controller and agent to exchange information without maintaining a direct connection.
 
-The credential entry uses service `gundo` and account
-`github:mamadub03/gundo-test-repo`. Both modes under the same OS user use that
-entry. Keychain access may require OS approval/unlocking. Credential-store
-protection does not prevent extraction by a sufficiently privileged local user;
-the process needs the usable token in memory.
+---
 
-## Verification
+## Design Principles
 
-Automated tests use fake storage, fake token input, and mocked HTTP responses;
-they must not access real credential entries or GitHub. Standard checks:
+### Modular Architecture
 
-```sh
-gofmt -l *.go
-go test ./...
-go vet ./...
-go build ./...
-```
+Gundo separates operational logic, transport communication, and agent execution into distinct components.
 
-Manual Mac-controller/Windows-client verification (not performed automatically):
+This separation allows individual components to be developed and maintained independently.
 
-1. Run `setup` on each machine as its intended OS user. Confirm input is hidden
-   and successful setup does not create an Issue or change existing client state.
-2. Launch each mode without supplying `GITHUB_TOKEN`. Existing installations
-   should retain their ClientID/IssueNumber; a fresh client should create one Issue.
-3. Send `ping` from the controller and verify the result. This checks write access.
-4. Stop and relaunch both: no token prompt should be needed while the store is
-   accessible. OS credential-access prompts may still appear.
-5. Enter a deliberately invalid replacement through `setup`; validation should
-   fail and the previous stored credential should continue working on relaunch.
+### Asynchronous Communication
 
-Windows cross-compilation checks compilation only; it does not verify Windows
-Credential Manager behavior. No automatic retry, mailbox recovery, ETags, or
-background service installation is included in credential setup.
+Tasks and results are exchanged through an intermediary platform rather than relying on persistent connections between the controller and agent.
 
-## Operator console
+### Extensible Transport Layer
 
-Run the existing `controller` mode for the banner and interactive agent/action
-menus. Use arrow keys and Enter, or `/` to search the visible entries. Ctrl+C
-backs out of a selection (exits from the agent list). Refresh and Quit are menu
-entries. All agents are shown initially; select Hide offline agents to narrow the list. Online agents sort first, then by Issue number. Compact rows show a green Online/Offline label and the agent
-Issue number; the selected-agent view shows the full ID and heartbeat age. No aliases are stored.
+Gundo is designed to support multiple SaaS communication mechanisms through a common transport abstraction.
 
-Agent status remains Online/Offline and is a discovery snapshot, not a live
-background refresh. A failed mailbox read is logged and remains Offline, as
-before. Toggling the offline view uses the current snapshot without another
-GitHub request. Empty discovery results still allow refresh or quit.
+GitHub Issues serves as the initial transport, with additional integrations planned as the framework develops.
 
-Action submission shows the selected action, target Issue and TaskID, followed by
-static waiting text and the final result/output. Shutdown requires typing `yes`;
-an empty custom-command input cancels that selection. Result output has terminal
-control sequences removed. There is no spinner, progress percentage, execution
-acknowledgment, or in-app cancellation of result waiting in this increment.
+### Reliability and Maintainability
 
-Set `NO_COLOR` to disable colors. Set `GUNDO_PLAIN=1` to use numbered menus;
-non-terminal input/output and `TERM=dumb` also use the plain fallback. Enter `0`
-to back out of a numbered menu. Existing launch commands and credentials apply.
+Gundo emphasizes predictable task processing, API efficiency, error handling, and maintainable implementations.
 
-Console verification: mocked tests cover selection mapping, cancellation without
-posting, sanitized output, and a full mocked ping/result path. A local PTY preview
-with fake agents verified arrow-down selection and result rendering. Mac and
-Windows builds pass; actual Windows terminal appearance and live GitHub use still
-need manual verification.
+These considerations become especially important when building distributed communication systems around third-party APIs.
 
-Interactive console navigation redraws the screen when entering/leaving an agent,
-refreshing, or toggling the list. Within an agent session, action output and errors remain visible while the next
-action menu appears immediately; no extra Enter prompt is required. Plain/redirected output retains its transcript without clearing
-or extra acknowledgement prompts. The banner uses slanted green ASCII lettering.
+---
+
+## Project Status
+
+> **Status: Active Development**
+>
+> Gundo is an experimental framework under active development. Its interfaces, architecture, and functionality may change as the project evolves.
+
+| Component | Status |
+|---|---|
+| Core controller | In development |
+| GitHub Issues transport | Initial implementation |
+| Agent execution | In development |
+| Pagination and polling improvements | In progress |
+| Credential management | Planned improvements |
+| Deployment and packaging | Planned |
+| Additional SaaS transports | Future development |
+
+For implementation details and upcoming milestones, see the project roadmap when published.
+
+---
+
+## Documentation
+
+Gundo's documentation is organized to support readers with different levels of technical experience.
+
+Whether you're new to command-and-control frameworks or interested in the underlying engineering, you can explore the project at your own pace.
+
+| Guide | What You'll Learn |
+|---|---|
+| **Getting Started** | Install Gundo, configure a transport, and follow your first task. |
+| **Core Concepts** | Understand C2 fundamentals, asynchronous communication, and SaaS-based transports. |
+| **Architecture** | Explore the controller, agent, transport abstraction, and end-to-end task lifecycle. |
+| **Engineering** | Understand polling, pagination, API limitations, reliability, and architectural tradeoffs. |
+| **Developer Reference** | Explore interfaces, data structures, configuration, and source-code documentation. |
+
+*A dedicated documentation website is planned. Documentation links will be added as guides become available.*
+
+---
+
+## Contributing
+
+Gundo is developed as an open-source cybersecurity engineering project with an emphasis on modular development, technical learning, and collaboration.
+
+Contributions involving framework development, transport integrations, testing, documentation, and developer experience are welcome.
+
+Contribution guidelines and development instructions will be provided in `CONTRIBUTING.md`.
+
+Related detection engineering and defensive research initiatives are maintained separately from the core framework.
+
+---
+
+## Responsible Use
+
+Gundo is intended for authorized cybersecurity research, education, and controlled testing environments.
+
+Users are responsible for obtaining appropriate authorization before deploying or operating the framework and for complying with applicable laws and third-party service policies.
+
+---
+
+## License
+
+License information will be added once the project's open-source license has been selected.
