@@ -5,32 +5,43 @@
 
 ### A Modular SaaS-Based Command-and-Control Framework
 
-An open-source C2 framework built in Go that uses third-party SaaS platforms to communicate with remote agents without requiring a direct connection to the controller.
+An open-source C2 framework built in Go for authorized red teaming and adversary emulation, using third-party SaaS platforms to communicate with remote agents.
 
-<sub>Built with Go · GitHub Issues Transport</sub>
+<br>
 
-<br/>
+**Go** &nbsp;·&nbsp; **GitHub Issues** &nbsp;·&nbsp; **Modular C2**
 
-[**Get Started**](#getting-started) &nbsp;·&nbsp;
-[**Documentation**](#documentation) &nbsp;·&nbsp;
-[**Architecture**](#architecture) &nbsp;·&nbsp;
+<br>
+
+[**Getting Started**](#getting-started) &nbsp;&nbsp;·&nbsp;&nbsp;
+[**Documentation**](#documentation) &nbsp;&nbsp;·&nbsp;&nbsp;
+[**Architecture**](#architecture) &nbsp;&nbsp;·&nbsp;&nbsp;
 [**Contributing**](#contributing)
 
 </div>
 
-<br/>
+<br>
 
 ---
 
-## Why Gundo?
+## Overview
 
-Traditional command-and-control (C2) frameworks commonly rely on agents communicating directly with operator-controlled servers.
+Gundo is a command-and-control (C2) framework that enables red team operators to manage remote agents, issue commands, and retrieve execution results through third-party Software-as-a-Service (SaaS) platforms.
 
-**Gundo takes a different approach.**
+Rather than requiring agents to connect directly to dedicated C2 infrastructure, Gundo uses SaaS APIs as intermediaries for communication. Its initial transport uses **GitHub Issues** to exchange tasks and results between agents and the controller.
 
-Rather than requiring agents to connect directly to the controller, Gundo uses familiar Software-as-a-Service (SaaS) platforms, such as GitHub, to exchange commands and results.
+The framework separates its operational, transport, and execution components, allowing communication methods to be developed independently of the core system.
 
-The project explores how these everyday services can support C2 communication while introducing interesting engineering challenges around reliability, communication, and extensibility.
+---
+
+## Features
+
+- **Remote Task Execution** — Issue commands to remote agents and retrieve execution results through the controller.
+- **SaaS-Based Communication** — Exchange tasks and results through GitHub Issues without direct agent-to-controller connections.
+- **Agent Management** — Manage remote agents and monitor their activity through the operator interface.
+- **Asynchronous Operations** — Agents periodically check for new tasks and return results without maintaining persistent connections.
+- **Modular Transport Architecture** — Separates communication mechanisms from core functionality to support additional SaaS transports.
+- **Operator Interface** — Manage agents, submit tasks, and review results through a centralized interface.
 
 ---
 
@@ -38,88 +49,78 @@ The project explores how these everyday services can support C2 communication wh
 
 <div align="center">
 
-<!-- Replace this placeholder with your draw.io diagram. -->
+<!-- Replace this placeholder with your draw.io SVG diagram. -->
 <!-- ![Gundo High-Level Architecture](assets/architecture/gundo-overview.svg) -->
 
 *High-level architecture diagram coming soon.*
 
 </div>
 
-Gundo consists of three main components:
+Gundo is organized around three primary components:
 
-- **Controller** — Receives commands from the operator and manages communication with agents.
-- **Transport** — Uses a SaaS platform to carry commands and results between the controller and agents.
-- **Agent** — Retrieves commands, executes tasks, and sends the results back through the transport.
+| Component | Responsibility |
+|:---|:---|
+| **Controller** | Manages operator requests, remote agents, and execution results. |
+| **Transport** | Exchanges tasks and results through a supported SaaS platform. |
+| **Agent** | Retrieves tasks, executes instructions, and returns results to the controller. |
 
-**How it works:** An operator submits a command, the controller publishes it through GitHub Issues, and the agent retrieves it during its next check. Once the task is completed, the result travels back through GitHub for the controller to collect.
+### Communication Flow
 
-This process is asynchronous, meaning the controller and agent don't need to maintain a continuous connection.
+1. An operator submits a task through the interface.
+2. The controller publishes the task using the configured SaaS transport.
+3. The agent retrieves the task during its next check.
+4. The agent executes the task and publishes its result.
+5. The controller retrieves the result and presents it to the operator.
 
----
-
-## What Gundo Does
-
-**Send commands remotely**
-
-Submit tasks through the controller and retrieve the results from remote agents.
-
-**Communicate through GitHub**
-
-Use GitHub Issues to exchange tasks and results without requiring agents to connect directly to the controller.
-
-**Work without a continuous connection**
-
-Agents periodically check for new tasks and publish results when they're ready. This is known as asynchronous communication.
-
-**Built for additional SaaS transports**
-
-Gundo separates how tasks are managed from how they're delivered, making it possible to add other SaaS communication methods.
+This approach allows agents and controllers to exchange information asynchronously without maintaining direct connections.
 
 ---
 
 ## Getting Started
 
-Gundo is designed for authorized cybersecurity research, educational environments, and controlled testing.
+Gundo is designed for authorized red teaming, adversary emulation, and controlled security assessments.
 
-Installation, configuration, and a walkthrough of your first task will be available in the Getting Started documentation.
+Setup instructions, configuration guidance, and a walkthrough of your first agent session will be available in the Getting Started documentation.
 
-*Quickstart guide coming soon.*
+**Quickstart documentation coming soon.**
 
 ---
 
 ## Documentation
 
-Explore Gundo at your own pace, whether you're learning about C2 frameworks for the first time or interested in the underlying engineering.
+<div align="center">
+
+**Learn the framework. Understand the architecture. Build with Gundo.**
+
+</div>
 
 | Guide | Description |
 |:---|:---|
-| **Getting Started** | Install Gundo, configure a transport, and run your first task. |
-| **Core Concepts** | Learn how C2 works, what SaaS transports are, and why asynchronous communication matters. |
-| **Architecture** | Understand the controller, agent, transport layer, and how they interact. |
-| **Engineering** | Explore the design decisions, challenges, and implementation details behind Gundo. |
-| **Developer Reference** | Find information about Go packages, interfaces, functions, and configuration. |
+| **Getting Started** | Installation, configuration, and first agent session. |
+| **Core Concepts** | Understand Gundo's SaaS communication model and key terminology. |
+| **Architecture** | Explore the controller, agent, transport layer, and system workflow. |
+| **Engineering** | Technical implementation, communication protocols, reliability, and design decisions. |
+| **Developer Reference** | Interfaces, packages, configuration, and source-code references. |
 
-*A dedicated documentation website is in development.*
+A dedicated documentation website is in development.
 
 ---
 
 ## Contributing
 
-Gundo is an open-source project developed to explore security engineering, distributed systems, and modular software design.
+Gundo is an open-source framework welcoming contributions to its core functionality, transport integrations, testing, documentation, and developer experience.
 
-Contributions to the framework, new transport integrations, testing, documentation, and developer experience are welcome.
+For development guidelines and contribution instructions, see `CONTRIBUTING.md` once published.
 
-Contribution guidelines will be available in `CONTRIBUTING.md`.
-
-Related detection engineering and defensive research initiatives are maintained in separate repositories.
+Related defensive security and detection engineering efforts are maintained in separate repositories.
 
 ---
 
 ## Responsible Use
 
-Gundo is intended for authorized security research, education, and controlled testing environments.
+Gundo is intended exclusively for authorized red teaming, adversary emulation, security assessments, and educational environments.
 
-Users are responsible for obtaining permission before deploying or operating the framework and complying with applicable laws and third-party platform policies.
+Operators are responsible for obtaining appropriate authorization before deployment and complying with applicable laws and third-party platform policies.
 
 ---
 
