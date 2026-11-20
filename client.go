@@ -228,6 +228,7 @@ func (c *Client) heartbeatLoop(issueNumber int) {
 	}
 }
 
+// core method that polls the GitHub issues for new tasks
 func (c *Client) pollTasks(issueNumber int) {
 
 	// Get the comments that already exist when the client starts.
