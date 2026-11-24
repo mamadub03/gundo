@@ -1,4 +1,4 @@
-package main
+package shared
 
 import (
 	"errors"
@@ -57,7 +57,7 @@ func validateEnteredToken(token string) error {
 	return validateGitHubToken(client, token)
 }
 
-func initializeGitHubToken() error {
+func InitializeGitHubToken() error {
 	token, err := resolveGitHubToken(loadStoredToken, promptForToken, validateEnteredToken, saveStoredToken)
 	if err != nil {
 		return err
@@ -66,7 +66,7 @@ func initializeGitHubToken() error {
 	return nil
 }
 
-func setupGitHubToken() error {
+func SetupGitHubToken() error {
 	_, err := enterAndSaveToken(promptForToken, validateEnteredToken, saveStoredToken)
 	if err == nil {
 		fmt.Println("Token saved. Authentication and Issues read access verified; write permission was not tested. Restart running Gundo processes to use it.")

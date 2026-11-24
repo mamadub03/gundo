@@ -1,4 +1,4 @@
-package main
+package shared
 
 import (
 	"bytes"
@@ -73,7 +73,7 @@ func checkTokenEndpoint(client *http.Client, token, endpoint string, identity bo
 	return nil
 }
 
-func createIssue(issue IssueRequest) (IssueResponse, error) {
+func CreateIssue(issue IssueRequest) (IssueResponse, error) {
 
 	// turn the issue struct to JSON
 	jsonData, err := json.Marshal(issue)
@@ -133,81 +133,26 @@ func createIssue(issue IssueRequest) (IssueResponse, error) {
 	return createdIssue, nil
 }
 
-// do not remove... used in credentials_test.go to test the GitHub API without making real requests
-func getIssue(issueNumber int) (IssueResponse, error) {
-
-	url := fmt.Sprintf("https://api.github.com/repos/mamadub03/gundo-test-repo/issues/%d", issueNumber)
-
-	// create a new HTTP request to the API endpoint
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return IssueResponse{}, fmt.Errorf("error creating request: %w", err)
-	}
-
-	// set the necessary headers for the request
-	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
-	req.Header.Set("User-Agent", "gundo")
-
-	token, err := currentGitHubToken()
-	if err != nil {
-		return IssueResponse{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	// setting up the client to send the request and get the response
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return IssueResponse{}, fmt.Errorf("error sending request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 200 failure check handler
-	if resp.StatusCode != http.StatusOK {
-		var gitHubError GitHubErrorResponse
-		decoder := json.NewDecoder(resp.Body)
-		err = decoder.Decode(&gitHubError)
-		if err != nil {
-			return IssueResponse{}, fmt.Errorf("error decoding GitHub error response: %w", err)
-		}
-		return IssueResponse{}, fmt.Errorf("GitHub request failed: %s, message: %s", resp.Status, gitHubError.Message)
-	}
-
-	// create a decoder to read the response body and decode it into the IssueResponse struct
-	var issue IssueResponse
-	decoder := json.NewDecoder(resp.Body)
-
-	// decode the JSON response into the issue struct (points to the struct addy)
-	err = decoder.Decode(&issue)
-
-	if err != nil {
-		return IssueResponse{}, fmt.Errorf("error decoding JSON: %w", err)
-	}
-
-	return issue, nil
-
-}
-
-func listComments(issueNumber int) ([]IssueComment, error) {
-	return listCommentsSince(issueNumber, time.Time{})
+func ListComments(issueNumber int) ([]IssueComment, error) {
+	return ListCommentsSince(issueNumber, time.Time{})
 }
 
 // A zero boundary keeps full-history reads available for the initial baseline.
-func listCommentsSince(issueNumber int, since time.Time) ([]IssueComment, error) {
+func ListCommentsSince(issueNumber int, since time.Time) ([]IssueComment, error) {
 	token, err := currentGitHubToken()
 	if err != nil {
 		return nil, err
 	}
-	return listCommentsSinceWithClient(issueNumber, &http.Client{}, token, since)
+	return ListCommentsSinceWithClient(issueNumber, &http.Client{}, token, since)
 }
 
 // The injected client lets tests exercise real pagination with in-memory HTTP
 // responses, without reading credentials or contacting GitHub.
 func listCommentsWithClient(issueNumber int, client *http.Client, token string) ([]IssueComment, error) {
-	return listCommentsSinceWithClient(issueNumber, client, token, time.Time{})
+	return ListCommentsSinceWithClient(issueNumber, client, token, time.Time{})
 }
 
-func listCommentsSinceWithClient(issueNumber int, client *http.Client, token string, since time.Time) ([]IssueComment, error) {
+func ListCommentsSinceWithClient(issueNumber int, client *http.Client, token string, since time.Time) ([]IssueComment, error) {
 	nextURL := fmt.Sprintf(
 		"https://api.github.com/repos/mamadub03/gundo-test-repo/issues/%d/comments?per_page=100",
 		issueNumber,
@@ -356,22 +301,22 @@ func splitCommentLinks(header string) ([]string, error) {
 	return links, nil
 }
 
-func createComment(issueNumber int, message GundoMessage) error {
-	_, err := createCommentWithMetadata(issueNumber, message)
+func CreateComment(issueNumber int, message GundoMessage) error {
+	_, err := CreateCommentWithMetadata(issueNumber, message)
 	return err
 }
 
 // Retain the created task's transport bookmark before waiting for its result.
 // Heartbeat/result callers can continue using the error-only createComment API.
-func createCommentWithMetadata(issueNumber int, message GundoMessage) (IssueComment, error) {
+func CreateCommentWithMetadata(issueNumber int, message GundoMessage) (IssueComment, error) {
 	token, err := currentGitHubToken()
 	if err != nil {
 		return IssueComment{}, err
 	}
-	return createCommentWithClient(issueNumber, message, &http.Client{}, token)
+	return CreateCommentWithClient(issueNumber, message, &http.Client{}, token)
 }
 
-func createCommentWithClient(issueNumber int, message GundoMessage, client *http.Client, token string) (IssueComment, error) {
+func CreateCommentWithClient(issueNumber int, message GundoMessage, client *http.Client, token string) (IssueComment, error) {
 
 	// FLOW: take GundoMessage --> marshal to JSON --> create comment request struct --> marshal to JSON --> send POST request to GitHub API
 
@@ -434,7 +379,7 @@ func createCommentWithClient(issueNumber int, message GundoMessage, client *http
 	return created, nil
 }
 
-func listIssues() ([]IssueResponse, error) {
+func ListIssues() ([]IssueResponse, error) {
 
 	// grab issues that are available and represent each agent
 

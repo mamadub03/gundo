@@ -1,4 +1,4 @@
-package main
+package controller
 
 import (
 	"bufio"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"gundo/shared"
 
 	"github.com/manifoldco/promptui"
 	"golang.org/x/term"
@@ -65,7 +67,7 @@ func (c *operatorConsole) banner() {
               [ G U N D O ]
 `
 	fmt.Fprint(c.out, c.style("1;32", art))
-	fmt.Fprintf(c.out, "\n   OPERATOR CONSOLE  %s\n\n", c.style("90", "v"+clientVersion))
+	fmt.Fprintf(c.out, "\n   OPERATOR CONSOLE  %s\n\n", c.style("90", "v"+shared.Version))
 }
 
 // Redraw only actual interactive terminals; redirected output stays readable.
@@ -180,7 +182,7 @@ func (c *operatorConsole) agentHeading(client ManagedClient) {
 	fmt.Fprintf(c.out, "  ClientID  %s\n", consoleLabel(client.ClientID))
 	fmt.Fprintf(c.out, "  %s · Last heartbeat: %s\n", c.style("32", "Online"), heartbeatAge(client.LastSeen, time.Now()))
 }
-func (c *operatorConsole) result(action, taskID string, result GundoMessage, elapsed time.Duration) {
+func (c *operatorConsole) result(action, taskID string, result shared.GundoMessage, elapsed time.Duration) {
 	code := "32"
 	if result.Status != "success" {
 		code = "31"

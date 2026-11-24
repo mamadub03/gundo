@@ -1,4 +1,4 @@
-package main
+package shared
 
 import (
 	"encoding/json"
@@ -7,17 +7,16 @@ import (
 	"uuid"
 )
 
-func generateTaskID() string {
+func GenerateTaskID() string {
 	// generate a new UUID
 	return uuid.New().String()
 }
 
-func createTaskMessage(action string) GundoMessage {
-
+func CreateTaskMessage(action string) GundoMessage {
 	// create a new GundoMessage struct with the provided action and a generated task ID
 	message := GundoMessage{
 		Type:      "task",
-		TaskID:    generateTaskID(),
+		TaskID:    GenerateTaskID(),
 		Action:    action,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
@@ -25,15 +24,14 @@ func createTaskMessage(action string) GundoMessage {
 	return message
 }
 
-func parseGundoMessage(body string) (GundoMessage, error) {
+func ParseGundoMessage(body string) (GundoMessage, error) {
 	var message GundoMessage
 
-	//  unmarshals and packs JSON back into the GundoMessage struct
+	// unmarshals and packs JSON back into the GundoMessage struct
 	err := json.Unmarshal([]byte(body), &message)
 	if err != nil {
 		return GundoMessage{}, fmt.Errorf("error unmarshalling JSON: %w", err)
 	}
 
 	return message, nil
-
 }

@@ -1,4 +1,4 @@
-package main
+package shared
 
 import (
 	"fmt"
@@ -7,12 +7,12 @@ import (
 
 // Each consumer owns its own bookmark. It is intentionally in memory: client
 // restarts still establish a fresh baseline without replaying historical tasks.
-type commentCheckpoint struct {
+type CommentCheckpoint struct {
 	LastSeenCommentID int64
 	CreatedAt         time.Time
 }
 
-func (checkpoint commentCheckpoint) since() time.Time {
+func (checkpoint CommentCheckpoint) Since() time.Time {
 	if checkpoint.CreatedAt.IsZero() {
 		// An empty mailbox has no bookmark yet; an unfiltered read is still cheap.
 		return time.Time{}
@@ -22,18 +22,18 @@ func (checkpoint commentCheckpoint) since() time.Time {
 	return checkpoint.CreatedAt.Add(-time.Second)
 }
 
-func (checkpoint *commentCheckpoint) poll(issueNumber int, list func(int, time.Time) ([]IssueComment, error)) ([]IssueComment, error) {
-	comments, err := list(issueNumber, checkpoint.since())
+func (checkpoint *CommentCheckpoint) Poll(issueNumber int, list func(int, time.Time) ([]IssueComment, error)) ([]IssueComment, error) {
+	comments, err := list(issueNumber, checkpoint.Since())
 	if err != nil {
 		// list returns only after every page succeeds. Failed reads keep the bookmark.
 		return nil, err
 	}
-	return checkpoint.accept(comments)
+	return checkpoint.Accept(comments)
 }
 
-// accept filters overlap and validates the whole batch before committing any
+// Accept filters overlap and validates the whole batch before committing any
 // progress. Its returned comments are new transport messages, including non-tasks.
-func (checkpoint *commentCheckpoint) accept(comments []IssueComment) ([]IssueComment, error) {
+func (checkpoint *CommentCheckpoint) Accept(comments []IssueComment) ([]IssueComment, error) {
 	next := *checkpoint
 	var unseen []IssueComment
 	for _, comment := range comments {

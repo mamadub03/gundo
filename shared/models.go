@@ -1,6 +1,8 @@
-package main
+package shared
 
 import "time"
+
+const Version = "0.1.0"
 
 type IssueRequest struct {
 	Title string `json:"title"`

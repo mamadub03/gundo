@@ -86,7 +86,7 @@ These reflect the **last confirmed conversation milestone**, not a fresh source-
 2. For the current checkbox, request a read-only investigation and a concise implementation/test plan.
 3. Review the plan and approve a bounded scope.
 4. Have Codex implement and run observable tests; inspect its diff and explanation.
-5. Check completed items and record any new architectural decision in `docs/DECISIONS.md`.
+5. Check completed items and record any new architectural decision in `DECISIONS.md`.
 
 **Current starting point:** The user prioritized credential setup/deployment after the incremental-polling review. Credential-store setup is implemented and automated checks pass. Manual Mac/Windows credential-store and end-to-end verification remains pending. Conditional requests, rate-limit resilience, and deleted-Issue recovery remain separate, unimplemented work requiring approval.
 
