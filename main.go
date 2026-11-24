@@ -14,7 +14,7 @@ func main() {
 		fmt.Println("Usage:")
 		fmt.Println("  go run . client")
 		fmt.Println("  go run . controller")
-		fmt.Println("  go run . setup  (save or replace the GitHub token)")
+		fmt.Println("  go run . setup  (configure or replace GitHub repository and token)")
 		return
 	}
 
@@ -37,7 +37,7 @@ func main() {
 	case "setup":
 		// Credential replacement does not load or change the client's identity file.
 		if err := shared.SetupGitHubToken(); err != nil {
-			fmt.Fprintf(os.Stderr, "Token setup failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Setup failed: %v\n", err)
 			os.Exit(1)
 		}
 

@@ -88,9 +88,7 @@ The controller and agent exchange information asynchronously through the SaaS pl
 
 Gundo is intended for authorized red team engagements, adversary emulation, and controlled testing environments.
 
-A complete setup guide will cover installation, configuration, deployment, and running your first task.
-
-**Getting Started guide coming soon.**
+- **[Controller Build & Setup Guide](CONTROLLER_SETUP.md)** — Step-by-step instructions for building, authenticating, and operating the operator controller.
 
 ---
 
@@ -100,9 +98,9 @@ Whether you're new to C2 frameworks or interested in the underlying implementati
 
 | Guide | Description |
 |:---|:---|
-| **Getting Started** | Install and configure Gundo, deploy an agent, and execute your first task. |
+| **[Controller Setup](CONTROLLER_SETUP.md)** | Build, configure credentials, and operate the operator console interface. |
+| **[Architecture](ARCHITECTURE.md)** | Explore the controller, agent, transport layer, and system communication flow. |
 | **Core Concepts** | Understand command-and-control fundamentals, SaaS transports, and asynchronous communication. |
-| **Architecture** | Explore the controller, agent, transport layer, and system communication flow. |
 | **Engineering** | Understand implementation details, communication protocols, reliability, and design decisions. |
 | **Developer Reference** | Explore Go packages, interfaces, functions, configuration, and code documentation. |
 

