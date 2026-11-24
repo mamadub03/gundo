@@ -193,7 +193,6 @@ func listComments(issueNumber int) ([]IssueComment, error) {
 }
 
 // A zero boundary keeps full-history reads available for the initial baseline.
-// does the execution of the withClient worker
 func listCommentsSince(issueNumber int, since time.Time) ([]IssueComment, error) {
 	token, err := currentGitHubToken()
 	if err != nil {
@@ -204,12 +203,9 @@ func listCommentsSince(issueNumber int, since time.Time) ([]IssueComment, error)
 
 // The injected client lets tests exercise real pagination with in-memory HTTP
 // responses, without reading credentials or contacting GitHub.
-// !TEST FUNCTION NOT USED IN PROD!
 func listCommentsWithClient(issueNumber int, client *http.Client, token string) ([]IssueComment, error) {
 	return listCommentsSinceWithClient(issueNumber, client, token, time.Time{})
 }
-
-// the actual worker that gets everything supplied and handles grabbing the pages
 
 func listCommentsSinceWithClient(issueNumber int, client *http.Client, token string, since time.Time) ([]IssueComment, error) {
 	nextURL := fmt.Sprintf(

@@ -22,7 +22,6 @@ func (checkpoint commentCheckpoint) since() time.Time {
 	return checkpoint.CreatedAt.Add(-time.Second)
 }
 
-// returns new comments since the last checkpoint to pollTasksOnce()
 func (checkpoint *commentCheckpoint) poll(issueNumber int, list func(int, time.Time) ([]IssueComment, error)) ([]IssueComment, error) {
 	comments, err := list(issueNumber, checkpoint.since())
 	if err != nil {
@@ -34,7 +33,6 @@ func (checkpoint *commentCheckpoint) poll(issueNumber int, list func(int, time.T
 
 // accept filters overlap and validates the whole batch before committing any
 // progress. Its returned comments are new transport messages, including non-tasks.
-// establishes the checkpoint and is called in pollTasks() in client.go
 func (checkpoint *commentCheckpoint) accept(comments []IssueComment) ([]IssueComment, error) {
 	next := *checkpoint
 	var unseen []IssueComment

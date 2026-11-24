@@ -22,7 +22,6 @@ type IssueComment struct {
 	// keeps track of what has been processed
 	ID   int64  `json:"id"`
 	// message of comment (will contain gundo message)
-	// gundo message still a string and parsed later
 	Body string `json:"body"`
 	// Use GitHub's creation time for retrieval, not the message author's clock.
 	CreatedAt time.Time `json:"created_at"`
@@ -30,11 +29,7 @@ type IssueComment struct {
 
 // structured communication language for gundo
 type GundoMessage struct {
-
-	// type of message, either "task", "result", or "heartbeat"
 	Type   string `json:"type"`
-
-	// unique identifier for the task, used to match results to tasks
 	TaskID string `json:"task_id,omitempty"`
 
 	// used in going from controller to client
@@ -54,13 +49,9 @@ type GundoMessage struct {
 
 	OS            string `json:"os,omitempty"`
 	Version       string `json:"version,omitempty"`
-	// when the agent was created
 	StartedAt     string `json:"started_at,omitempty"`
-
-	// not implemented at the moment
 	UptimeSeconds int64  `json:"uptime_seconds,omitempty"`
 
-	// timestamp of when the message was created, in RFC3339 format
 	Timestamp string `json:"timestamp"`
 }
 
