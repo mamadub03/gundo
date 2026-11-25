@@ -74,14 +74,10 @@ func checkTokenEndpoint(client *http.Client, token, endpoint string, identity bo
 }
 
 func CreateIssue(issue IssueRequest) (IssueResponse, error) {
-
-	// turn the issue struct to JSON
 	jsonData, err := json.Marshal(issue)
 	if err != nil {
 		return IssueResponse{}, fmt.Errorf("error marshalling JSON: %w", err)
 	}
-
-	fmt.Println(string(jsonData))
 
 	repo, err := currentGitHubRepo()
 	if err != nil {
@@ -150,12 +146,6 @@ func ListCommentsSince(issueNumber int, since time.Time) ([]IssueComment, error)
 		return nil, err
 	}
 	return ListCommentsSinceWithClient(issueNumber, &http.Client{}, token, since)
-}
-
-// The injected client lets tests exercise real pagination with in-memory HTTP
-// responses, without reading credentials or contacting GitHub.
-func listCommentsWithClient(issueNumber int, client *http.Client, token string) ([]IssueComment, error) {
-	return ListCommentsSinceWithClient(issueNumber, client, token, time.Time{})
 }
 
 func ListCommentsSinceWithClient(issueNumber int, client *http.Client, token string, since time.Time) ([]IssueComment, error) {

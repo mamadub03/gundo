@@ -230,10 +230,6 @@ func runCustomPrompt(console *operatorConsole, client ManagedClient) {
 
 // Run starts the interactive operator console controller.
 func Run() {
-	runController()
-}
-
-func runController() {
 	console := newOperatorConsole()
 	mailboxes := make(map[int]discoveryMailbox)
 	showOffline := true

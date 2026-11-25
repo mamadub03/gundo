@@ -10,9 +10,8 @@ type IssueRequest struct {
 }
 
 type IssueResponse struct {
-	Number  int    `json:"number"`
-	Title   string `json:"title"`
-	HTMLURL string `json:"html_url"`
+	Number int    `json:"number"`
+	Title  string `json:"title"`
 }
 
 type IssueComment struct {
@@ -36,7 +35,6 @@ type GundoMessage struct {
 	ClientID string `json:"client_id,omitempty"`
 
 	Action string `json:"action,omitempty"`
-	Input  string `json:"input,omitempty"`
 
 	//using command to have cleaner field for custom commands
 	Command string `json:"command,omitempty"`
@@ -44,10 +42,8 @@ type GundoMessage struct {
 	Output string `json:"output,omitempty"`
 	Status string `json:"status,omitempty"`
 
-	OS            string `json:"os,omitempty"`
-	Version       string `json:"version,omitempty"`
-	StartedAt     string `json:"started_at,omitempty"`
-	UptimeSeconds int64  `json:"uptime_seconds,omitempty"`
+	OS      string `json:"os,omitempty"`
+	Version string `json:"version,omitempty"`
 
 	Timestamp string `json:"timestamp"`
 }

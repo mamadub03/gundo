@@ -17,7 +17,6 @@ import (
 const credentialService = "gundo"
 const credentialRepoAccount = "github_repo"
 const credentialTokenAccount = "github_token"
-const legacyCredentialAccount = "github:mamadub03/gundo-test-repo"
 
 // Initialized before starting either mode's goroutines; read-only afterward.
 // The token stays in process memory, never in the environment or client state.
@@ -56,10 +55,6 @@ func SetGitHubCredentials(token, repo string) {
 
 // ParseGitHubRepo normalizes a repository string or GitHub URL to 'owner/repo'.
 func ParseGitHubRepo(input string) (string, error) {
-	return parseGitHubRepo(input)
-}
-
-func parseGitHubRepo(input string) (string, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
 		return "", fmt.Errorf("repository cannot be empty")
@@ -95,16 +90,7 @@ func saveStoredRepo(repo string) error {
 }
 
 func loadStoredToken() (string, error) {
-	token, err := keyring.Get(credentialService, credentialTokenAccount)
-	if err == nil && strings.TrimSpace(token) != "" {
-		return token, nil
-	}
-	// Fallback to legacy account key if present
-	legacy, lErr := keyring.Get(credentialService, legacyCredentialAccount)
-	if lErr == nil && strings.TrimSpace(legacy) != "" {
-		return legacy, nil
-	}
-	return token, err
+	return keyring.Get(credentialService, credentialTokenAccount)
 }
 
 func saveStoredToken(token string) error {
@@ -122,7 +108,7 @@ func promptForRepo() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("could not read repository input: %w", err)
 	}
-	return parseGitHubRepo(input)
+	return ParseGitHubRepo(input)
 }
 
 func promptForToken() (string, error) {
@@ -173,7 +159,7 @@ func InitializeGitHubToken() error {
 	// 1. Resolve repository: ENV -> Keyring -> Prompt
 	envRepo := getEnvCredential("GUNDO_REPO", "GITHUB_REPO")
 	if envRepo != "" {
-		parsed, err := parseGitHubRepo(envRepo)
+		parsed, err := ParseGitHubRepo(envRepo)
 		if err != nil {
 			return fmt.Errorf("invalid repository from environment: %w", err)
 		}
@@ -181,7 +167,7 @@ func InitializeGitHubToken() error {
 	} else {
 		storedRepo, err := loadStoredRepo()
 		if err == nil && strings.TrimSpace(storedRepo) != "" {
-			parsed, pErr := parseGitHubRepo(storedRepo)
+			parsed, pErr := ParseGitHubRepo(storedRepo)
 			if pErr == nil {
 				repo = parsed
 			}
