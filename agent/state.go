@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // when gundo agent is restarted, we lose the target's (clientID) + agent communication channel (IssueNumber)
@@ -13,6 +14,61 @@ import (
 type ClientState struct {
 	ClientID    string `json:"client_id"`
 	IssueNumber int    `json:"issue_number"`
+	Repo        string `json:"repo,omitempty"`
+	Token       string `json:"token,omitempty"`
+}
+
+type SetupPayload struct {
+	Repo  string `json:"repo"`
+	Token string `json:"token"`
+}
+
+// FindTempSetupFile checks for temporary configuration files in standard locations.
+func FindTempSetupFile() (string, error) {
+	// 1. Explicit environment override
+	if envPath := strings.TrimSpace(os.Getenv("GUNDO_SETUP_FILE")); envPath != "" {
+		if _, err := os.Stat(envPath); err == nil {
+			return envPath, nil
+		}
+	}
+
+	candidates := []string{
+		filepath.Join(os.TempDir(), "gundo_setup.json"),
+		"gundo_setup.json",
+	}
+
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", os.ErrNotExist
+}
+
+// ReadAndConsumeSetupFile reads the setup payload and immediately removes the temp file from disk.
+func ReadAndConsumeSetupFile(path string) (SetupPayload, error) {
+	data, err := os.ReadFile(path)
+	// Immediately remove the setup file so credentials don't linger on disk under any circumstance
+	defer os.Remove(path)
+
+	if err != nil {
+		return SetupPayload{}, fmt.Errorf("failed to read setup file %s: %w", path, err)
+	}
+
+	var payload SetupPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return SetupPayload{}, fmt.Errorf("failed to parse setup file JSON: %w", err)
+	}
+
+	payload.Repo = strings.TrimSpace(payload.Repo)
+	payload.Token = strings.TrimSpace(payload.Token)
+
+	if payload.Repo == "" || payload.Token == "" {
+		return SetupPayload{}, fmt.Errorf("setup file must specify both 'repo' and 'token'")
+	}
+
+	return payload, nil
 }
 
 // helper for finding and creating gundo directory
@@ -47,10 +103,20 @@ func LoadState() (ClientState, error) {
 		return ClientState{}, err
 	}
 
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" {
+		return ClientState{}, os.ErrNotExist
+	}
+
 	var state ClientState
 
 	if err := json.Unmarshal(data, &state); err != nil {
 		return ClientState{}, fmt.Errorf("Error parsing client state: %w", err)
+	}
+
+	// If the state file has no client ID or issue number, treat as non-existent/empty
+	if state.ClientID == "" && state.IssueNumber == 0 {
+		return ClientState{}, os.ErrNotExist
 	}
 
 	return state, nil

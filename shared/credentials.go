@@ -48,6 +48,17 @@ func CurrentGitHubRepo() string {
 	return githubRepo
 }
 
+// SetGitHubCredentials sets the in-memory GitHub token and repository directly.
+func SetGitHubCredentials(token, repo string) {
+	githubToken = token
+	githubRepo = repo
+}
+
+// ParseGitHubRepo normalizes a repository string or GitHub URL to 'owner/repo'.
+func ParseGitHubRepo(input string) (string, error) {
+	return parseGitHubRepo(input)
+}
+
 func parseGitHubRepo(input string) (string, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {

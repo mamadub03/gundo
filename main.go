@@ -20,11 +20,6 @@ func main() {
 
 	switch os.Args[1] {
 	case "client", "agent":
-		// Load once before enrollment or background work; missing credentials prompt here.
-		if err := shared.InitializeGitHubToken(); err != nil {
-			fmt.Fprintf(os.Stderr, "Authentication setup failed: %v\n", err)
-			os.Exit(1)
-		}
 		agent.Run()
 
 	case "controller":
